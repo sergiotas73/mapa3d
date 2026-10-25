@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mapa 3D</title>
+<link rel="stylesheet" href="maplibre-gl.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+<style>
+:root{--gl:rgba(16,22,20,.82);--ac:#3ddc84}
+html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidden;color:#fff;background:#000}
+#map{position:absolute;inset:0;background:#8fb8de}
+.b{border:0;border-radius:12px;padding:11px 14px;font:600 14px system-ui,sans-serif;color:#fff;background:var(--gl);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap}
+.b.on,.go{background:var(--ac);color:#06210f}
+#bar{position:absolute;top:env(safe-area-inset-top,0);left:0;right:0;z-index:5;display:flex;gap:6px;padding:8px;overflow-x:auto}
+.pn{position:absolute;z-index:6;background:var(--gl);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:none}
+#lm{top:calc(62px + env(safe-area-inset-top,0));left:8px;border-radius:14px;padding:6px;flex-direction:column}
+#lm .b{background:none;text-align:left;box-shadow:none}
+#nav{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0));padding:14px 16px;border-radius:20px}
+#eta{font:700 34px system-ui,sans-serif;letter-spacing:-.5px}
+#sub{opacity:.8;margin-top:2px}
+#nb{display:flex;gap:8px;margin-top:12px}
+#nb .b{flex:1;background:#ffffff22;box-shadow:none}
+#nb .go{background:var(--ac)}
+#list{left:0;right:0;bottom:0;max-height:50%;overflow:auto;border-radius:18px 18px 0 0;padding-bottom:env(safe-area-inset-bottom,0)}
+#hd{position:sticky;top:0;display:flex;gap:8px;padding:10px;background:#101614}
+#q{flex:1;min-width:0;padding:10px;font:inherit;color:#fff;background:#ffffff1c;border:0;border-radius:10px}
+.i{padding:12px 16px;border-top:1px solid #ffffff1c}
+.i small{display:block;opacity:.6}
+#msg{position:absolute;left:12px;right:12px;top:calc(62px + env(safe-area-inset-top,0));z-index:8;background:#000d;padding:10px 14px;border-radius:12px;display:none}
+.maplibregl-popup-content{color:#17201b;border-radius:12px;max-width:240px}
+.maplibregl-popup-content .go{margin-top:8px;width:100%;border:0;border-radius:8px;padding:9px;font:600 14px system-ui}
+</style>
+<script src="maplibre-gl.js"></script>
+<script>window.maplibregl||document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"><\/script>')</script>
+<script src="three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"><\/script>')</script>
+<script src="jszip.min.js"></script>
+<script>window.JSZip||document.write('<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"><\/script>')</script>
+<script src="pmtiles.js"></script>
+<script>window.pmtiles||document.write('<script src="https://cdn.jsdelivr.net/npm/pmtiles@3.2.1/dist/pmtiles.js"><\/script>')</script>
+</head><body>
+<div id="map"></div>
+<div id="bar">
+  <button class="b" id="bC">Capas</button><button class="b" id="bK">KMZ</button>
+  <button class="b" id="bL">Puntos</button><button class="b on" id="b3">3D</button>
+  <button class="b" id="bG">GPS</button><button class="b on" id="bV">Voz</button>
+</div>
+<div class="pn" id="lm"></div>
+<div class="pn" id="nav"><div id="eta"></div><div id="sub"></div>
+  <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
+<div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"><button class="b" id="bX">Borrar todo</button></div><div id="items"></div></div>
+<div id="msg"></div>
+<input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
+<input type="file" id="fP" accept=".pmtiles" multiple hidden>
+<script>
+const $ = s => document.querySelector(s), R = Math.PI / 180;
+const LS = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+             set: (k, v) => { try { localStorage.setItem(k, v); return 1; } catch (e) { return 0; } } };
+const EMPTY = { type: 'FeatureCollection', features: [] }, EXA = 1.5;
+const DEM = ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'];
+const BASES = [
+  { id: 'osm', n: 'Mapa', a: '© OpenStreetMap', t: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' },
+  { id: 'pnoa', n: 'Ortofoto PNOA (IGN)', a: 'PNOA © IGN', t: 'https://www.ign.es/wmts/pnoa-ma?request=GetTile&service=WMTS&version=1.0.0&layer=OI.OrthoimageCoverage&style=default&tilematrixset=GoogleMapsCompatible&format=image/jpeg&TileMatrix={z}&TileRow={y}&TileCol={x}' },
+  { id: 'esri', n: 'Satélite Esri', a: '© Esri', t: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' }];
+let sel = LS.get('base'); if (!BASES.some(b => b.id === sel)) sel = 'pnoa';
+let data = { type: 'FeatureCollection', features: [] };
+try { data = JSON.parse(LS.get('kmz-data')) || data; } catch (e) {}
+let is3d = true, follow = false, wid = null, me = null, tgt = null, route = null, sim = null;
+let voice = true, speed = 0, raf = 0, last = 0, camB = 0, camZ = 17;
+const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false };
+
+const dist = (a, b) => Math.hypot((b[0] - a[0]) * R * Math.cos((a[1] + b[1]) / 2 * R), (b[1] - a[1]) * R) * 6371008;
+const brg = (a, b) => (Math.atan2((b[0] - a[0]) * Math.cos(a[1] * R), b[1] - a[1]) / R + 360) % 360;
+const ang = (a, b, t) => a + (((b - a + 540) % 360) - 180) * t;
+const flat = c => typeof c[0] === 'number' ? [c] : c.flatMap(flat);
+function msg(t) { const m = $('#msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(msg.t); msg.t = setTimeout(() => m.style.display = 'none', 4500); }
+function speak(t) {
+  if (!voice || !window.speechSynthesis) return;
+  speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'es-ES'; speechSynthesis.speak(u);
+}
+
+/* ---------- Mapa ---------- */
+const proto = new pmtiles.Protocol(); maplibregl.addProtocol('pmtiles', proto.tile);
+const map = new maplibregl.Map({
+  container: 'map', center: [-0.5, 39.4], zoom: 9, maxPitch: 82, maxZoom: 20,
+  style: { version: 8,
+    sources: Object.fromEntries(BASES.map(b => [b.id, { type: 'raster', tiles: [b.t], tileSize: 256, maxzoom: 19, attribution: b.a }])),
+    layers: BASES.map(b => ({ id: 'b-' + b.id, type: 'raster', source: b.id, layout: { visibility: b.id === sel ? 'visible' : 'none' } })) }
+});
+
+function addDem(spec) {
+  if (map.getLayer('hill')) map.removeLayer('hill');
+  map.setTerrain(null);
+  if (map.getSource('dem')) map.removeSource('dem');
+  map.addSource('dem', { type: 'raster-dem', encoding: 'terrarium', tileSize: 256, maxzoom: 15, ...spec });
+  map.addLayer({ id: 'hill', type: 'hillshade', source: 'dem', paint: {
+    'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#14201a', 'hillshade-highlight-color': '#ffffff' } }, 'kml-fill');
+  if (is3d) map.setTerrain({ source: 'dem', exaggeration: EXA });
+}
+
+map.on('style.load', () => {
+  map.addSource('kml', { type: 'geojson', data });
+  map.addLayer({ id: 'kml-fill', type: 'fill', source: 'kml', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#f2b01e', 'fill-opacity': 0.25 } });
+  map.addLayer({ id: 'kml-case', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#000', 'line-opacity': 0.7, 'line-width': 6 } });
+  map.addLayer({ id: 'kml-line', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#ffd23f', 'line-width': 3 } });
+  map.addLayer({ id: 'kml-pts', type: 'circle', source: 'kml', filter: ['==', ['geometry-type'], 'Point'],
+    paint: { 'circle-radius': 7, 'circle-color': '#e5392f', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+  addDem({ tiles: DEM });
+  map.addSource('ofm', { type: 'vector', url: 'https://tiles.openfreemap.org/planet' });
+  map.addLayer({ id: 'bld', type: 'fill-extrusion', source: 'ofm', 'source-layer': 'building', minzoom: 14, paint: {
+    'fill-extrusion-color': '#d9d3c9', 'fill-extrusion-opacity': 0.9,
+    'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
+    'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0] } }, 'kml-fill');
+  map.addSource('route', { type: 'geojson', data: EMPTY });
+  map.addSource('dest', { type: 'geojson', data: EMPTY });
+  map.addLayer({ id: 'route-case', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 11 } });
+  map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2a7fff', 'line-width': 6.5 } });
+  map.addLayer({ id: 'dest', type: 'circle', source: 'dest', paint: { 'circle-radius': 10, 'circle-color': '#3ddc84', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
+  try { map.addLayer(carLayer); } catch (e) { msg('Coche 3D no disponible: ' + e.message); }
+  try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#dfe9ee',
+    'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.4 }); } catch (e) {}
+  set3d(true); render();
+  if (data.features.length) fit(data.features);
+});
+
+map.on('click', e => {
+  const f = map.queryRenderedFeatures(e.point, { layers: ['kml-pts', 'kml-line', 'kml-fill'] })[0];
+  if (f) popup(f.properties, f.geometry.type === 'Point' ? f.geometry.coordinates : [e.lngLat.lng, e.lngLat.lat]);
+});
+map.on('contextmenu', e => popup({ name: 'Punto elegido en el mapa' }, [e.lngLat.lng, e.lngLat.lat]));
+map.on('dragstart', () => { if (follow) { follow = false; map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 }); sync(); } });
+
+function popup(p, c) {
+  const d = document.createElement('div'), h = document.createElement('b');
+  h.textContent = p.name; d.append(h);
+  if (p.desc) { const t = document.createElement('div'); t.textContent = p.desc; d.append(t); }
+  const g = document.createElement('button'); g.className = 'go'; g.textContent = 'Ir aquí';
+  g.onclick = () => { pop.remove(); routeTo(c); }; d.append(g);
+  const pop = new maplibregl.Popup().setLngLat(c).setDOMContent(d).addTo(map);
+}
+
+/* ---------- Coche 3D (three.js dentro de MapLibre) ---------- */
+const carLayer = {
+  id: 'car', type: 'custom', renderingMode: '3d',
+  onAdd(m, gl) {
+    this.camera = new THREE.Camera(); this.scene = new THREE.Scene();
+    const mat = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
+    const box = (w, l, h, x, y, z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, l, h), mat(c)); m.position.set(x, y, z); return m; };
+    const g = new THREE.Group();
+    g.add(box(1.85, 4.3, 0.62, 0, 0, 0.62, 0xf2542d));      // carrocería
+    g.add(box(1.55, 2.3, 0.58, 0, -0.25, 1.2, 0x1b2a38));   // cabina
+    g.add(box(1.5, 2.1, 0.06, 0, -0.25, 1.52, 0xf2542d));   // techo
+    g.add(box(1.6, 0.12, 0.2, 0, 2.16, 0.7, 0xfff2b0), box(1.6, 0.12, 0.2, 0, -2.16, 0.7, 0xc01818));
+    for (const [x, y] of [[-.92, 1.35], [.92, 1.35], [-.92, -1.35], [.92, -1.35]]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(.38, .38, .28, 16), mat(0x111111));
+      w.rotation.z = Math.PI / 2; w.position.set(x, y, .38); g.add(w);
+    }
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 5.2), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: .35, depthWrite: false }));
+    sh.position.z = 0.04; g.add(sh);
+    g.traverse(o => o.frustumCulled = false);
+    this.scene.add(g, new THREE.AmbientLight(0xffffff, .75));
+    const sun = new THREE.DirectionalLight(0xffffff, .9); sun.position.set(-1, -1.5, 2.5); this.scene.add(sun);
+    this.renderer = new THREE.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
+    this.renderer.autoClear = false; this.renderer.outputEncoding = THREE.sRGBEncoding;
+  },
+  render(gl, a) {
+    if (!car.on) return;
+    const M = (a && a.defaultProjectionData && a.defaultProjectionData.mainMatrix) || (a && a.modelViewProjectionMatrix) || a;
+    const mc = maplibregl.MercatorCoordinate.fromLngLat([car.lng, car.lat], car.z);
+    const mpp = 156543.03 * Math.cos(car.lat * R) / Math.pow(2, map.getZoom());
+    const s = mc.meterInMercatorCoordinateUnits() * Math.max(1, 95 * mpp / 4.3);   // tamaño en pantalla casi constante
+    const l = new THREE.Matrix4().makeTranslation(mc.x, mc.y, mc.z).scale(new THREE.Vector3(s, -s, s))
+      .multiply(new THREE.Matrix4().makeRotationZ(-car.hdg * R));
+    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(M).multiply(l);
+    this.renderer.resetState(); this.renderer.render(this.scene, this.camera);
+  }
+};
+
+/* ---------- Bucle de animación: coche suave y cámara de persecución ---------- */
+function loop() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
+function tick(t) {
+  const dt = Math.min((t - last) / 1000 || 0.016, 0.1); last = t;
+  if (wid === null && !sim) { raf = 0; return; }
+  if (sim) stepSim(dt);
+  if (tgt) {
+    const a = 1 - Math.exp(-dt * 4);
+    car.lng += (tgt.lng - car.lng) * a; car.lat += (tgt.lat - car.lat) * a;
+    car.hdg = ang(car.hdg, tgt.hdg, 1 - Math.exp(-dt * 3));
+    const e = map.queryTerrainElevation && map.queryTerrainElevation([car.lng, car.lat]);
+    car.z += ((e || 0) - car.z) * 0.3;
+    if (follow) {
+      const wz = (is3d ? 18.1 : 17.2) - Math.min(speed * 3.6 / 90, 1) * 1.5;
+      camZ += (wz - camZ) * (1 - Math.exp(-dt * 1.2)); camB = ang(camB, car.hdg, 1 - Math.exp(-dt * 2));
+      map.jumpTo({ center: [car.lng, car.lat], zoom: camZ, pitch: is3d ? 68 : 0, bearing: is3d ? camB : 0,
+        padding: { top: is3d ? innerHeight * 0.5 : 0, bottom: 0, left: 0, right: 0 } });
+    }
+  }
+  map.triggerRepaint(); raf = requestAnimationFrame(tick);
+}
+
+function fix(lng, lat, h, sp) {
+  if (h != null && isNaN(h)) h = null;
+  if (!tgt) { Object.assign(car, { lng, lat, on: true }); tgt = { lng, lat, hdg: h || 0 }; car.hdg = tgt.hdg; }
+  else {
+    if (h == null && dist([tgt.lng, tgt.lat], [lng, lat]) > 3) h = brg([tgt.lng, tgt.lat], [lng, lat]);
+    if (h != null && (sp == null || sp > 1 || sim)) tgt.hdg = h;
+    tgt.lng = lng; tgt.lat = lat;
+  }
+  speed = sp || 0; me = [lng, lat]; progress();
+}
+
+/* ---------- GPS ---------- */
+function sync() {
+  const on = wid !== null || sim;
+  $('#bG').classList.toggle('on', !!on); $('#bG').textContent = !on ? 'GPS' : follow ? 'Siguiendo' : 'Centrar';
+}
+function startFollow() { follow = true; camZ = map.getZoom(); camB = map.getBearing(); sync(); }
+function startGps() {
+  if (wid !== null) return;
+  if (!navigator.geolocation) return msg('Este navegador no tiene geolocalización');
+  wid = navigator.geolocation.watchPosition(p => fix(p.coords.longitude, p.coords.latitude, p.coords.heading, p.coords.speed),
+    err => { msg(err.code === 1 ? 'Ubicación denegada. Los archivos abiertos desde el móvil suelen tenerla bloqueada: abre la app desde una dirección https o localhost y permite la ubicación al navegador.' : 'GPS: ' + err.message); wid = null; sync(); }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+  loop();
+}
+$('#bG').onclick = () => {
+  if ((wid !== null || sim) && follow) {
+    if (wid !== null) navigator.geolocation.clearWatch(wid);
+    wid = null; sim = null; follow = false; car.on = false; tgt = null;
+    map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 }); map.triggerRepaint();
+    return sync();
+  }
+  startGps(); startFollow();
+};
+
+/* ---------- Ruta, tiempo y distancia ---------- */
+const fmtD = m => m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' km';
+const fmtT = s => { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; };
+const hhmm = s => new Date(Date.now() + s * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+async function routeTo(d) {
+  const o = me || map.getCenter().toArray(); let c, dur, tot, line = false;
+  if (!me) msg('Sin posición GPS: la ruta sale del centro del mapa');
+  speechSynthesis && speechSynthesis.speak(new SpeechSynthesisUtterance(''));   // permite la voz desde este toque
+  try {
+    const ac = new AbortController(); setTimeout(() => ac.abort(), 7000);
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${o[0]},${o[1]};${d[0]},${d[1]}?overview=full&geometries=geojson`, { signal: ac.signal });
+    const rt = (await r.json()).routes[0]; c = rt.geometry.coordinates; dur = rt.duration; tot = rt.distance;
+  } catch (e) { c = [o, d]; tot = dist(o, d); dur = tot / (50 / 3.6); line = true; msg('Sin conexión: línea recta a 50 km/h'); }
+  const cum = [0]; for (let i = 1; i < c.length; i++) cum.push(cum[i - 1] + dist(c[i - 1], c[i]));
+  route = { c, cum, tot: Math.max(cum[cum.length - 1], 1), dur, i: 0, d };
+  map.getSource('route').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } });
+  map.getSource('dest').setData({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: d } });
+  const b = new maplibregl.LngLatBounds(); c.forEach(p => b.extend(p));
+  map.fitBounds(b, { padding: { top: 90, bottom: 220, left: 40, right: 40 }, duration: 1200, pitch: is3d ? 45 : 0, bearing: 0 });
+  follow = false; showNav(tot, dur);
+  speak(`Ruta calculada${line ? ' en línea recta' : ''}. ${fmtD(tot).replace(' km', ' kilómetros').replace(' m', ' metros')}, ${fmtT(dur).replace('min', 'minutos').replace(' h', ' horas')}. Llegada prevista a las ${hhmm(dur)}.`);
+}
+function showNav(rem, sec) {
+  $('#nav').style.display = 'block';
+  $('#eta').textContent = fmtT(sec) + ' · ' + fmtD(rem);
+  $('#sub').textContent = 'Llegada a las ' + hhmm(sec);
+}
+function progress() {
+  if (!route || !me) return;
+  let best = route.i, bd = 1e12;
+  for (let i = route.i; i < Math.min(route.c.length, route.i + 80); i++) { const d = dist(me, route.c[i]); if (d < bd) { bd = d; best = i; } }
+  route.i = best;
+  const rem = route.tot - route.cum[best] + bd;
+  showNav(rem, route.dur * rem / route.tot);
+  if (rem < 25) { speak('Ha llegado a su destino.'); closeNav(); }
+}
+function closeNav() {
+  route = null; sim = null; $('#nav').style.display = 'none';
+  map.getSource('route').setData(EMPTY); map.getSource('dest').setData(EMPTY); sync();
+}
+$('#nGo').onclick = () => { if (route) { startGps(); startFollow(); } };
+$('#nX').onclick = closeNav;
+$('#nSim').onclick = () => {
+  if (!route) return;
+  if (wid !== null) { navigator.geolocation.clearWatch(wid); wid = null; }
+  route.i = 0; sim = { d: 0, i: 0 }; tgt = null; startFollow(); loop();
+};
+function stepSim(dt) {
+  sim.d += 17 * dt;
+  const { c, cum } = route;
+  while (sim.i < c.length - 2 && cum[sim.i + 1] < sim.d) sim.i++;
+  if (sim.d >= route.tot) { sim = null; return sync(); }
+  const f = (sim.d - cum[sim.i]) / Math.max(cum[sim.i + 1] - cum[sim.i], 0.01), a = c[sim.i], b = c[sim.i + 1];
+  fix(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, brg(a, b), 17);
+}
+
+/* ---------- 3D, capas y mapas offline ---------- */
+function set3d(on) {
+  is3d = on; $('#b3').classList.toggle('on', on);
+  map.setTerrain(on ? { source: 'dem', exaggeration: EXA } : null);
+  if (map.getLayer('bld')) map.setLayoutProperty('bld', 'visibility', on ? 'visible' : 'none');
+  if (!follow) map.easeTo({ pitch: on ? 62 : 0, duration: 900 });
+}
+$('#b3').onclick = () => set3d(!is3d);
+$('#bV').onclick = () => { voice = !voice; $('#bV').classList.toggle('on', voice); if (!voice) speechSynthesis.cancel(); };
+
+function setBase(id) {
+  sel = id; LS.set('base', id);
+  BASES.forEach(b => map.setLayoutProperty('b-' + b.id, 'visibility', b.id === id ? 'visible' : 'none'));
+  menu();
+}
+function menu() {
+  const m = $('#lm'); m.textContent = '';
+  BASES.forEach(b => { const x = document.createElement('button'); x.className = 'b'; x.textContent = (b.id === sel ? '● ' : '○ ') + b.n; x.onclick = () => { setBase(b.id); m.style.display = 'none'; }; m.append(x); });
+  const o = document.createElement('button'); o.className = 'b'; o.textContent = '+ Cargar mapa offline (.pmtiles)';
+  o.onclick = () => $('#fP').click(); m.append(o);
+}
+$('#bC').onclick = () => { const m = $('#lm'); menu(); m.style.display = m.style.display === 'flex' ? 'none' : 'flex'; };
+
+// .pmtiles raster = mapa base; si el nombre contiene dem/mdt/terrain = relieve (Terrarium)
+$('#fP').onchange = async e => {
+  for (const f of e.target.files) {
+    try {
+      const p = new pmtiles.PMTiles(new pmtiles.FileSource(f)); proto.add(p);
+      const h = await p.getHeader(), url = 'pmtiles://' + f.name;
+      if (/dem|mdt|terrain|terrarium/i.test(f.name)) { addDem({ url }); msg('Relieve offline cargado'); }
+      else {
+        const id = 'off' + BASES.length;
+        map.addSource(id, { type: 'raster', url, tileSize: 256 });
+        map.addLayer({ id: 'b-' + id, type: 'raster', source: id, layout: { visibility: 'none' } }, 'hill');
+        BASES.push({ id, n: 'Offline: ' + f.name }); setBase(id);
+        map.fitBounds([[h.minLon, h.minLat], [h.maxLon, h.maxLat]], { animate: false });
+        msg('Mapa offline cargado');
+      }
+    } catch (err) { msg(f.name + ': ' + err.message); }
+  }
+  e.target.value = ''; $('#lm').style.display = 'none';
+};
+
+/* ---------- KMZ / KML ---------- */
+async function readFile(f) {
+  let txt;
+  if (/\.kmz$/i.test(f.name)) {
+    const z = await JSZip.loadAsync(f), k = Object.keys(z.files).find(n => /\.kml$/i.test(n));
+    if (!k) throw new Error('El KMZ no contiene ningún KML');
+    txt = await z.files[k].async('string');
+  } else txt = await f.text();
+  return parseKML(txt, f.name);
+}
+function parseKML(t, src) {
+  t = t.slice(Math.max(0, t.indexOf('<')));   // quita BOM/espacios previos
+  const d = new DOMParser().parseFromString(t, 'text/xml'), out = [];
+  if (d.getElementsByTagName('parsererror').length) throw new Error('KML no válido');
+  const co = s => s.trim().split(/\s+/).map(p => p.split(',').map(Number)).filter(a => a.length >= 2 && !isNaN(a[0]) && !isNaN(a[1])).map(a => [a[0], a[1]]);
+  for (const p of d.getElementsByTagName('Placemark')) {
+    const g = n => { const e = p.getElementsByTagName(n)[0]; return e ? e.textContent.trim() : ''; };
+    const props = { name: g('name') || '(sin nombre)', desc: g('description').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300), src }, gs = [];
+    for (const e of p.getElementsByTagName('Point')) gs.push({ type: 'Point', coordinates: co(e.getElementsByTagName('coordinates')[0].textContent)[0] });
+    for (const e of p.getElementsByTagName('LineString')) gs.push({ type: 'LineString', coordinates: co(e.getElementsByTagName('coordinates')[0].textContent) });
+    for (const e of p.getElementsByTagName('Polygon')) gs.push({ type: 'Polygon', coordinates: [...e.getElementsByTagName('coordinates')].map(c => co(c.textContent)) });
+    for (const e of p.getElementsByTagName('gx:Track')) {
+      const cc = [...e.getElementsByTagName('gx:coord')].map(x => x.textContent.trim().split(/\s+/).map(Number)).filter(a => a.length >= 2 && !isNaN(a[0]) && !isNaN(a[1])).map(a => [a[0], a[1]]);
+      if (cc.length > 1) gs.push({ type: 'LineString', coordinates: cc });
+    }
+    gs.filter(x => x.coordinates && x.coordinates.length).forEach(geometry => out.push({ type: 'Feature', properties: props, geometry }));
+  }
+  return out;
+}
+function fit(fs) {
+  const b = new maplibregl.LngLatBounds(); fs.forEach(f => flat(f.geometry.coordinates).forEach(c => b.extend(c)));
+  if (!b.isEmpty()) map.fitBounds(b, { padding: 80, maxZoom: 17, duration: 900 });
+}
+function save() {
+  const s = map.getSource('kml'); if (s) s.setData(data);
+  if (!LS.set('kmz-data', JSON.stringify(data))) msg('No se pudo guardar en el dispositivo (demasiados datos)');
+}
+$('#bK').onclick = () => $('#fK').click();
+$('#fK').onchange = async e => {
+  let n = 0, bad = 0;
+  for (const f of e.target.files) {
+    try { const fs = await readFile(f); data.features.push(...fs); n += fs.length; fit(fs); } catch (err) { bad = 1; msg(f.name + ': ' + err.message); }
+  }
+  e.target.value = ''; save(); render();
+  if (n) msg(n + ' elementos importados'); else if (!bad) msg('No se encontraron puntos, líneas ni polígonos en el archivo');
+};
+
+/* ---------- Lista de puntos ---------- */
+function render() {
+  const q = $('#q').value.toLowerCase(), box = $('#items'); box.textContent = '';
+  data.features.filter(f => f.properties.name.toLowerCase().includes(q)).slice(0, 300).forEach(f => {
+    const d = document.createElement('div'), s = document.createElement('small'); d.className = 'i';
+    d.textContent = f.properties.name; s.textContent = f.geometry.type + ' · ' + f.properties.src; d.append(s);
+    d.onclick = () => { const c = flat(f.geometry.coordinates), p = c[Math.floor(c.length / 2)];
+      map.flyTo({ center: p, zoom: Math.max(map.getZoom(), 16) }); popup(f.properties, p); $('#list').style.display = 'none'; };
+    box.append(d);
+  });
+  if (!box.children.length) { const d = document.createElement('div'); d.className = 'i'; d.textContent = 'Sin puntos. Pulsa KMZ para importar.'; box.append(d); }
+}
+$('#bL').onclick = () => { const l = $('#list'); l.style.display = l.style.display === 'block' ? 'none' : 'block'; render(); };
+$('#q').oninput = render;
+$('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; save(); render(); } };
+</script>
+</body></html>
