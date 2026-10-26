@@ -286,16 +286,20 @@ function labels() {
 }
 
 /* ---------- Selección de punto: vista 2D limpia del recinto + uso SIGPAC por voz ---------- */
-function select(f) {
-  selF = f;
-  const poly = f.geometry.type === 'Polygon' ? f : data.features.find(g => g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0]));
+const recinto = f => f.geometry.type === 'Polygon' ? f : data.features.find(g => g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0]));
+const usoOf = f => { const p = f.properties, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
+function usoSay(f) {
+  const p = recinto(f), u = usoOf(f) || (p ? usoOf(p) : '');
+  return u ? 'Uso SIGPAC: ' + (USO[u.toUpperCase()] || u) + '. ' : '';
+}
+function select(f, quiet) {
+  selF = f; const poly = recinto(f);
   map.getSource('sel').setData({ type: 'FeatureCollection', features: poly && poly !== f ? [poly, f] : [f] });
-  const u = (f.properties.uso || (poly && poly.properties.uso) || '').trim();
-  if (u) speak('Uso SIGPAC: ' + (USO[u.toUpperCase()] || u));
+  if (!quiet) { const s = usoSay(f); if (s) speak(s); }
   return poly;
 }
-function focusFeature(f) {
-  const poly = select(f);
+function focusFeature(f, quiet) {
+  const poly = select(f, quiet);
   if (is3d) { prev3d = true; set3d(false); }
   setFollow(false);
   if (poly) {
@@ -449,17 +453,18 @@ async function routeTo(d, re, f) {
   map.getSource('route').setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } });
   map.getSource('dest').setData({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: d } });
   if (!re) {
-    if (f) focusFeature(f);
+    if (f) focusFeature(f, true);
     else { const b = new maplibregl.LngLatBounds(); c.forEach(p => b.extend(p)); setFollow(false);
       map.fitBounds(b, { padding: { top: 100, bottom: 220, left: 40, right: 40 }, duration: 1000, pitch: 0, bearing: 0 }); }
   }
   showNav(tot, dur); turns();
-  speak(re ? 'Ruta recalculada.' : `Ruta calculada${line ? ' en línea recta' : ''}. ${fmtD(tot).replace(' km', ' kilómetros').replace(' m', ' metros')}, ${fmtT(dur).replace('min', 'minutos').replace(' h', ' horas')}. Llegada prevista a las ${hhmm(dur)}.`);
+  speak(re ? 'Ruta recalculada.' : (f ? usoSay(f) : '') + `Ruta calculada${line ? ' en línea recta' : ''}. ${fmtD(tot).replace(' km', ' kilómetros').replace(' m', ' metros')}, ${fmtT(dur).replace('min', 'minutos').replace(' h', ' horas')}. Llegada prevista a las ${hhmm(dur)}.`);
   if (!line) prefetchRoute();
 }
 function showNav(rem, sec) {
   $('#nav').style.display = 'block';
-  $('#eta').innerHTML = `${fmtT(sec)} <i>·</i> ${fmtD(rem)} <i>·</i> <small>llegada ${hhmm(sec)}</small>`;
+  $('#eta').textContent = fmtT(sec) + ' · ' + fmtD(rem);
+  $('#sub').textContent = 'Llegada prevista a las ' + hhmm(sec);
 }
 function turns() {
   const T = $('#turn'), st = route.steps;
@@ -520,7 +525,7 @@ function setBase(id) {
 }
 function menu() {
   const m = $('#lm'); m.textContent = '';
-  BASES.forEach(b => { const x = btn((b.id === sel ? '● ' : '○ ') + b.n); x.onclick = () => { setBase(b.id); m.style.display = 'none'; }; m.append(x); });
+  BASES.forEach(b => { const x = btn((b.id === sel ? '● ' : '○ ') + b.n); x.onclick = () => { setBase(b.id); panel('lm'); }; m.append(x); });
   const o = btn('+ Cargar mapa offline (.pmtiles)'); o.onclick = () => $('#fP').click(); m.append(o);
 }
 function panel(id) {
@@ -551,7 +556,7 @@ $('#fP').onchange = async e => {
       }
     } catch (err) { msg(f.name + ': ' + err.message); }
   }
-  e.target.value = ''; $('#lm').style.display = 'none';
+  e.target.value = ''; if (openP === 'lm') panel('lm');
 };
 
 /* ---------- Opciones ---------- */
@@ -568,6 +573,11 @@ function optMenu() {
   m.append(r);
   r.querySelector('#oR').onchange = e => { opts.r = +e.target.value; LS.set('opts', JSON.stringify(opts)); };
   r.querySelector('#oZ').onchange = e => { opts.z = +e.target.value; LS.set('opts', JSON.stringify(opts)); };
+  const ic = document.createElement('div'); ic.className = 'row';
+  ic.innerHTML = 'Icono <select id="oI">' + [['red', 'Coche rojo'], ['blue', 'Coche azul'], ['green', 'Coche verde'], ['yellow', 'Coche amarillo'], ['white', 'Coche blanco'], ['black', 'Coche negro'], ['dot', 'Punto azul con pulso']]
+    .map(([v, n]) => `<option value="${v}"${opts.icon === v ? ' selected' : ''}>${n}</option>`).join('') + '</select>';
+  m.append(ic);
+  ic.querySelector('#oI').onchange = e => { opts.icon = e.target.value; LS.set('opts', JSON.stringify(opts)); updIcons(); };
   const d = btn(job ? 'Cancelar descarga' : 'Descargar mapa cerca de los puntos'); d.onclick = dlZone; m.append(d);
   const x = btn('Borrar mapas descargados'); x.onclick = async () => { if (window.caches && confirm('¿Borrar todos los mapas descargados?')) { await caches.delete(CACHE); msg('Caché de mapas borrada'); } }; m.append(x);
 }
@@ -666,13 +676,8 @@ function upd() {
   });
 }
 setInterval(() => { if ($('#list').style.display === 'block') upd(); }, 1000);
-function closeList() { $('#list').style.display = 'none'; $('#bL').classList.remove('on'); }
-$('#bL').onclick = () => {
-  if ($('#list').style.display === 'block') return closeList();
-  $('#lm').style.display = $('#om').style.display = 'none';
-  $('#list').style.display = 'block'; $('#bL').classList.add('on'); render(); startCompass();
-  if (wid === null && !sim) startGps();
-};
+function closeList() { if (openP === 'list') panel('list'); }
+$('#bL').onclick = () => panel('list');
 $('#q').oninput = render;
 $('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; save(); render(); } };
 </script>
