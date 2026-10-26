@@ -92,7 +92,17 @@ const TPL = {
   dem: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png' };
 const BASES = [{ id: 'osm', n: 'Mapa', a: '© OpenStreetMap' }, { id: 'pnoa', n: 'Ortofoto PNOA (IGN)', a: 'PNOA © IGN' }, { id: 'esri', n: 'Satélite Esri', a: '© Esri' }];
 const tileUrl = (id, z, x, y) => TPL[id].replace(/\{z\}/g, z).replace(/\{x\}/g, x).replace(/\{y\}/g, y);
-const USO = { TA: 'tierra arable', TH: 'huerta', VI: 'viñedo', OV: 'olivar', CI: 'cítricos', FY: 'frutos secos', PS: 'pastizal', PR: 'pasto arbustivo', PA: 'pasto arbolado', FO: 'forestal', IM: 'improductivo', IV: 'invernadero', ZU: 'zona urbana', ED: 'edificación', CA: 'viales', AG: 'agua' };
+const USO = { AG: 'corrientes y superficies de agua', CA: 'viales', CF: 'asociación cítricos-frutales', CI: 'cítricos', CV: 'asociación cítricos-viñedo', ED: 'edificaciones', EP: 'elemento del paisaje', FL: 'frutos secos y olivar', FO: 'forestal', FS: 'frutos secos', FV: 'frutos secos y viñedo', FY: 'frutales', IM: 'improductivos', IV: 'invernaderos y cultivos bajo plástico', MT: 'matorral', OC: 'asociación olivar-cítricos', OV: 'olivar', PA: 'pasto con arbolado', PR: 'pasto arbustivo', PS: 'pastizal', TA: 'tierras arables', TH: 'huerta', VF: 'viñedo-frutal', VI: 'viñedo', VO: 'viñedo-olivar', ZU: 'zona urbana', ZV: 'zona censurada' };
+const GRUPO = { TCS: 'tierras de cultivo de secano', TCR: 'tierras de cultivo de regadío', CP: 'cultivos permanentes', PP: 'pastos permanentes' };
+// Si hay conexión, actualiza la lista de usos desde el servicio oficial (se guarda para usarla sin conexión)
+(async () => {
+  try { Object.assign(USO, JSON.parse(LS.get('usoJson') || '{}')); } catch (e) {}
+  try {
+    const j = await (await fetch('https://sigpac-hubcloud.es/codigossigpac/cod_uso_sigpac.json')).json(), o = {};
+    j.codigos.forEach(x => { o[x.codigo] = String(x.descripcion).toLowerCase(); });
+    Object.assign(USO, o); LS.set('usoJson', JSON.stringify(o));
+  } catch (e) {}
+})();
 const ARW = { left: '←', right: '→', 'slight left': '↖', 'slight right': '↗', 'sharp left': '↙', 'sharp right': '↘', straight: '↑', uturn: '↶', rot: '↻', arrive: '⚑' };
 
 let sel = LS.get('base'); if (!BASES.some(b => b.id === sel)) sel = 'pnoa';
@@ -101,7 +111,7 @@ try { Object.assign(opts, JSON.parse(LS.get('opts'))); } catch (e) {}
 let data = { type: 'FeatureCollection', features: [] };
 try { data = JSON.parse(LS.get('kmz-data')) || data; } catch (e) {}
 data.features.forEach((f, i) => f.properties.id = i);
-let is3d = true, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null;
+let is3d = true, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
 
@@ -158,6 +168,16 @@ function tileKeys(pts, specs, r) {
   }
   return [...S];
 }
+const ROAD_W = 70;   // metros a cada lado de la línea de los caminos
+function sampleLine(c, step) {   // puntos cada `step` metros a lo largo de la línea
+  const out = [c[0]]; let acc = 0;
+  for (let i = 1; i < c.length; i++) {
+    const a = c[i - 1], b = c[i], d = dist(a, b);
+    for (let s = step - acc; s < d; s += step) out.push([a[0] + (b[0] - a[0]) * s / d, a[1] + (b[1] - a[1]) * s / d]);
+    acc = (acc + d) % step;
+  }
+  out.push(c[c.length - 1]); return out;
+}
 async function fetchTiles(keys, onP, j) {
   const ca = await caches.open(CACHE); let i = 0, done = 0, fail = 0;
   const w = async () => {
@@ -173,10 +193,13 @@ async function dlZone() {
   if (job) { job.stop = true; return; }
   if (!window.caches) return msg('La caché de mapas solo funciona desde https o localhost');
   if (!TPL[sel]) return msg('La capa activa es un archivo offline: no hace falta descargarla');
-  const pts = data.features.map(ptOf); if (!pts.length) return msg('Importa primero un KMZ con puntos');
-  const r = +opts.r, keys = tileKeys(pts, [[sel, 12, +opts.z], ['dem', 11, 15]], r);
+  const lines = data.features.filter(f => f.geometry.type === 'LineString'), pts = data.features.filter(f => f.geometry.type !== 'LineString').map(ptOf);
+  if (!pts.length && !lines.length) return msg('Importa primero un KMZ con puntos');
+  const sp = [[sel, 12, +opts.z], ['dem', 11, 15]], r = +opts.r, kp = tileKeys(pts, sp, r);
+  const kl = tileKeys(lines.flatMap(f => sampleLine(f.geometry.coordinates, 40)), sp, ROAD_W);
+  const keys = [...new Set([...kp, ...kl])], nl = keys.length - kp.length;
   const kb = { osm: 15, pnoa: 30, esri: 30, dem: 60 }, mb = Math.round(keys.reduce((s, k) => s + kb[k.split('/')[0]], 0) / 1024);
-  if (!confirm(`¿Descargar ${keys.length} teselas (≈${mb} MB) de «${BASES.find(b => b.id === sel).n}» y relieve, en un radio de ${r} m alrededor de los puntos?`)) return;
+  if (!confirm(`¿Descargar ${keys.length} teselas (≈${mb} MB) de «${BASES.find(b => b.id === sel).n}» y relieve?\n• Alrededor de los puntos (${r} m): ${kp.length}\n• Caminos (${ROAD_W} m a cada lado): ${nl} más`)) return;
   job = { stop: false }; if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); optMenu();
   const fail = await fetchTiles(keys, (d, n) => { if (d % 10 === 0 || d === n) msg(`Descargando mapa… ${d}/${n}`); }, job);
   const st = job.stop; job = null; optMenu();
@@ -185,13 +208,16 @@ async function dlZone() {
 async function prefetchRoute() {
   const rt = route; if (!window.caches || !TPL[sel] || !rt) return;
   const pts = []; let acc = -1e9; rt.c.forEach((p, i) => { if (rt.cum[i] - acc > 150) { pts.push(p); acc = rt.cum[i]; } });
-  try { await fetchTiles(tileKeys(pts, [[sel, 14, 17], ['dem', 12, 14]], 300), null, { stop: false }); } catch (e) {}
+  try {
+    const k = [...new Set([...tileKeys(pts, [[sel, 14, 17], ['dem', 12, 15]], 300), ...tileKeys(pts, [[sel, 18, 18]], 130)])];
+    await fetchTiles(k, null, { stop: false });
+  } catch (e) {}
 }
 
 /* ---------- Mapa ---------- */
 const map = new maplibregl.Map({
-  container: 'map', center: [-0.5, 39.4], zoom: 9, maxPitch: 82, maxZoom: 20, fadeDuration: 0,
-  pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+  container: 'map', center: [-0.5, 39.4], zoom: 9, maxPitch: 85, maxZoom: 20, fadeDuration: 100, maxTileCacheSize: 150,
+  pixelRatio: Math.min(window.devicePixelRatio || 1, 2.5),
   style: { version: 8,
     sources: Object.fromEntries(BASES.map(b => [b.id, { type: 'raster', tiles: ['ctile://' + b.id + '/{z}/{x}/{y}'], tileSize: 256, maxzoom: 19, attribution: b.a }])),
     layers: BASES.map(b => ({ id: 'b-' + b.id, type: 'raster', source: b.id, layout: { visibility: b.id === sel ? 'visible' : 'none' } })) }
@@ -205,6 +231,7 @@ function addDem(spec) {
   map.addLayer({ id: 'hill', type: 'hillshade', source: 'dem', paint: {
     'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#14201a', 'hillshade-highlight-color': '#ffffff' } }, 'kml-fill');
   if (is3d) map.setTerrain({ source: 'dem', exaggeration: EXA });
+  applyVis();
 }
 
 map.on('style.load', () => {
@@ -249,12 +276,18 @@ map.on('click', e => {
 map.on('contextmenu', e => popup({ name: 'Punto elegido en el mapa' }, [e.lngLat.lng, e.lngLat.lat]));
 map.on('dragstart', () => { if (follow && !sim) setFollow(false); });
 map.on('zoom', e => { if (e.originalEvent) zT = camZ = map.getZoom(); });
+map.on('pitch', e => { if (e.originalEvent && follow) pT = camP = map.getPitch(); });
 map.on('rotate', () => { const b = map.getBearing(); $('#cmp svg').style.transform = `rotate(${-b}deg)`; $('#cd').textContent = Math.round((b + 360) % 360) + '°'; });
 map.on('moveend', () => { if (!lt) lt = setTimeout(() => { lt = 0; labels(); }, follow ? 1500 : 200); });
+function applyRot() { const rot = cmode === 'M'; map.dragRotate[rot ? 'enable' : 'disable'](); map.touchZoomRotate[rot ? 'enableRotation' : 'disableRotation'](); }
+function applyLock() {   // en ruta: mapa bloqueado; solo se puede cambiar la inclinación (dos dedos arriba/abajo)
+  const on = follow && !!route;
+  ['dragPan', 'scrollZoom', 'doubleClickZoom', 'boxZoom', 'keyboard'].forEach(h => map[h][on ? 'disable' : 'enable']());
+  if (on) { map.dragRotate.disable(); map.touchZoomRotate.disable(); } else { map.touchZoomRotate.enable(); applyRot(); }
+}
 const MODES = { M: ['MANUAL', 'giro manual, gira el mapa con los dedos'], N: ['NORTE', 'norte arriba (fijo)'], A: ['AUTO', 'giro automático según la orientación del móvil'] };
 function setMode(m) {
-  cmode = m; const rot = m === 'M';
-  map.dragRotate[rot ? 'enable' : 'disable'](); map.touchZoomRotate[rot ? 'enableRotation' : 'disableRotation']();
+  cmode = m; applyLock();
   if (m === 'N') map.easeTo({ bearing: 0, duration: 500 });
   if (m === 'A') { startCompass(); if (wid === null && !sim) startGps(); loop(); }
   $('#cmp').classList.toggle('on', m === 'A'); $('#cm').textContent = MODES[m][0];
@@ -289,8 +322,12 @@ function labels() {
 const recinto = f => f.geometry.type === 'Polygon' ? f : data.features.find(g => g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0]));
 const usoOf = f => { const p = f.properties, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
 function usoSay(f) {
-  const p = recinto(f), u = usoOf(f) || (p ? usoOf(p) : '');
-  return u ? 'Uso SIGPAC: ' + (USO[u.toUpperCase()] || u) + '. ' : '';
+  const p = recinto(f), g = k => String(f.properties[k] || (p && p.properties[k]) || '').trim();
+  const u = usoOf(f) || (p ? usoOf(p) : ''), gr = g('grupo'), pe = g('pend').replace('.', ','); let s = '';
+  if (u) s += 'Uso SIGPAC: ' + (USO[u.toUpperCase()] || u) + '. ';
+  if (gr) s += 'Grupo de cultivo: ' + (GRUPO[gr.toUpperCase()] || gr) + '. ';
+  if (pe) s += 'Pendiente: ' + pe + ' por ciento. ';
+  return s;
 }
 function select(f, quiet) {
   selF = f; const poly = recinto(f);
@@ -298,14 +335,26 @@ function select(f, quiet) {
   if (!quiet) { const s = usoSay(f); if (s) speak(s); }
   return poly;
 }
-function focusFeature(f, quiet) {
+// Descarga a la caché las teselas del encuadre de destino (máx. 250 ms) para que lleguen ya cargadas
+async function warm(c, z, b) {
+  if (!window.caches || !TPL[sel]) return;
+  const zt = Math.min(19, Math.round(z + 1)), r = (b ? dist([b.getWest(), b.getSouth()], [b.getEast(), b.getNorth()]) / 2 : 120) + 40;
+  const keys = tileKeys([c], [[sel, Math.max(zt - 1, 12), zt], ['dem', 13, 15]], r).slice(0, 80);
+  try { await Promise.race([fetchTiles(keys, null, { stop: false }), new Promise(res => setTimeout(res, 250))]); } catch (e) {}
+}
+async function focusFeature(f, quiet) {
   const poly = select(f, quiet);
-  if (is3d) { prev3d = true; set3d(false); }
+  if (is3d) { prev3d = true; set3d(false, true); }
   setFollow(false);
+  let b = null, cam = { center: ptOf(f), zoom: 17.5 };
   if (poly) {
-    const b = new maplibregl.LngLatBounds(); flat(poly.geometry.coordinates).forEach(p => b.extend(p));
-    map.fitBounds(b, { padding: { top: 110, bottom: 240, left: 50, right: 50 }, pitch: 0, bearing: 0, maxZoom: 19.5, duration: 900 });
-  } else map.easeTo({ center: ptOf(f), zoom: 17.5, pitch: 0, bearing: 0, duration: 900 });
+    b = new maplibregl.LngLatBounds(); flat(poly.geometry.coordinates).forEach(p => b.extend(p));
+    const cb = map.cameraForBounds(b, { padding: { top: 110, bottom: 240, left: 50, right: 50 }, maxZoom: 19.5, bearing: 0, pitch: 0 });
+    if (cb) cam = { center: cb.center, zoom: cb.zoom };
+  }
+  const c = Array.isArray(cam.center) ? cam.center : [cam.center.lng, cam.center.lat];
+  await warm(c, cam.zoom, b);
+  map.easeTo({ center: c, zoom: cam.zoom, pitch: 0, bearing: 0, duration: 650, easing: easeOut });
 }
 
 /* ---------- Icono de posición: coche de color o punto azul con pulso + cono de orientación ---------- */
@@ -379,7 +428,7 @@ function tick(t) {
     mkDot.setLngLat([car.lng, car.lat]); mkCone.setLngLat([car.lng, car.lat]); mkCone.setRotation(devS != null ? devS : camB);
     if (follow) {
       camZ += (zT - camZ) * (1 - Math.exp(-dt * 2.5));
-      camP += ((is3d ? 62 : 0) - camP) * (1 - Math.exp(-dt * 2.5));
+      camP += ((is3d ? pT : 0) - camP) * (1 - Math.exp(-dt * 2.5));
       camB = ang(camB, cmode === 'N' ? 0 : th, 1 - Math.exp(-dt * 2.5));
       map.jumpTo({ center: [car.lng, car.lat], zoom: camZ, pitch: camP, bearing: camB });
     }
@@ -394,17 +443,20 @@ function fix(lng, lat, h, sp) {
     if (h != null && (sp == null || sp > 1 || sim)) tgt.hdg = h;
     tgt.lng = lng; tgt.lat = lat;
   }
-  fixT = performance.now(); speed = sp || 0; me = [lng, lat]; updIcons(); progress();
+  fixT = performance.now(); speed = sp || 0; me = [lng, lat]; updIcons(); if (openP === 'list' && !listSorted) render(); progress();
 }
 
 /* ---------- Seguimiento y GPS ---------- */
 function setPad() { map.setPadding(follow && is3d ? { top: Math.round(innerHeight * 0.4), bottom: 0, left: 0, right: 0 } : { top: 0, bottom: 0, left: 0, right: 0 }); }
-function applyVis() { if (map.getLayer('bld')) map.setLayoutProperty('bld', 'visibility', is3d && opts.bld && !follow ? 'visible' : 'none'); }
+function applyVis() {
+  if (map.getLayer('bld')) map.setLayoutProperty('bld', 'visibility', is3d && opts.bld && !follow ? 'visible' : 'none');
+  if (map.getLayer('hill')) map.setLayoutProperty('hill', 'visibility', sel === 'osm' ? 'visible' : 'none');   // las ortofotos ya traen sus sombras
+}
 function setFollow(on) {
   if (on === follow) return sync();
   follow = on;
-  if (on) { camZ = map.getZoom(); zT = is3d ? 17.8 : 17.2; camB = map.getBearing(); camP = map.getPitch(); }
-  setPad(); applyVis(); updIcons(); sync();
+  if (on) { camZ = map.getZoom(); zT = is3d ? 16.4 : 16.9; camB = map.getBearing(); camP = map.getPitch(); pT = route ? 80 : 62; }
+  setPad(); applyVis(); applyLock(); updIcons(); sync();
 }
 function sync() {
   const on = wid !== null || sim;
@@ -490,7 +542,7 @@ function progress() {
 }
 function closeNav() {
   route = null; sim = null; $('#nav').style.display = 'none'; $('#turn').style.display = 'none';
-  map.getSource('route').setData(EMPTY); map.getSource('dest').setData(EMPTY); sync();
+  map.getSource('route').setData(EMPTY); map.getSource('dest').setData(EMPTY); setFollow(false); sync();
 }
 const to3d = () => { if (prev3d) { prev3d = false; set3d(true); } };
 $('#nGo').onclick = () => { if (!route) return; to3d(); startGps(); setFollow(true); };
@@ -510,18 +562,28 @@ function stepSim(dt) {
 }
 
 /* ---------- 3D, capas y mapas offline ---------- */
-function set3d(on) {
-  is3d = on; $('#b3').classList.toggle('on', on);
-  if (map.getSource('dem')) map.setTerrain(on ? { source: 'dem', exaggeration: EXA } : null);
-  applyVis();
-  if (follow) setPad(); else map.easeTo({ pitch: on ? 62 : 0, duration: 900 });
+let tOff = 0;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+function terrainOffWhenFlat() {   // quita el relieve solo cuando la vista ya es cenital: sin saltos
+  cancelAnimationFrame(tOff); const t0 = performance.now();
+  const chk = t => { if (is3d) return; if (map.getPitch() < 1.5 || t - t0 > 2500) { map.setTerrain(null); return; } tOff = requestAnimationFrame(chk); };
+  tOff = requestAnimationFrame(chk);
+}
+function set3d(on, noCam) {
+  is3d = on; $('#b3').classList.toggle('on', on); applyVis();
+  if (on) {   // el relieve se activa con la vista aún plana y crece al inclinar
+    cancelAnimationFrame(tOff);
+    const has = map.getTerrain ? map.getTerrain() : map.terrain;
+    if (map.getSource('dem') && !has) map.setTerrain({ source: 'dem', exaggeration: EXA });
+  } else terrainOffWhenFlat();
+  if (follow) setPad(); else if (!noCam) map.easeTo({ pitch: on ? 62 : 0, duration: 650, easing: easeOut });
 }
 $('#b3').onclick = () => { prev3d = false; set3d(!is3d); };
 
 function setBase(id) {
   sel = id; LS.set('base', id);
   BASES.forEach(b => map.setLayoutProperty('b-' + b.id, 'visibility', b.id === id ? 'visible' : 'none'));
-  menu();
+  applyVis(); menu();
 }
 function menu() {
   const m = $('#lm'); m.textContent = '';
@@ -535,7 +597,11 @@ function panel(id) {
   });
   if (openP === 'lm') menu();
   if (openP === 'om') optMenu();
-  if (openP === 'list') { render(); startCompass(); if (wid === null && !sim) startGps(); }
+  if (openP === 'list') {
+    if (cmode !== 'M') setMode('M');
+    if (is3d) { prev3d = true; set3d(false); }
+    render(); startCompass(); if (wid === null && !sim) startGps();
+  }
 }
 $('#bC').onclick = () => panel('lm');
 
@@ -603,9 +669,10 @@ function parseKML(t, src) {
     const txt = g('description').replace(/<\/(td|th|tr)>/gi, ' | ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), ext = {};
     for (const e of p.getElementsByTagName('Data')) ext[e.getAttribute('name')] = ((e.getElementsByTagName('value')[0] || e).textContent || '').trim();
     for (const e of p.getElementsByTagName('SimpleData')) ext[e.getAttribute('name')] = e.textContent.trim();
-    const ks = Object.keys(ext), k = ks.find(x => /uso.*sigpac|sigpac.*uso/i.test(x)) || ks.find(x => /^uso/i.test(x));
+    const ks = Object.keys(ext), k = ks.find(x => /uso.*sigpac|sigpac.*uso/i.test(x)) || ks.find(x => /^uso/i.test(x)),
+      fld = (kr, tr) => { const kk = ks.find(x => kr.test(x)); if (kk) return ext[kk]; const mm = tr.exec(txt); return mm ? mm[1] : ''; };
     let uso = k ? ext[k] : ''; if (!uso) { const m = /uso[_ ]?sigpac[\s|:=]+([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]+)/i.exec(txt); if (m) uso = m[1]; }
-    const props = { name: g('name') || '(sin nombre)', desc: (txt || ks.map(x => x + ': ' + ext[x]).join(' · ')).slice(0, 400), uso, src }, gs = [];
+    const props = { name: g('name') || '(sin nombre)', desc: (txt || ks.map(x => x + ': ' + ext[x]).join(' · ')).slice(0, 400), uso, grupo: fld(/grupo_?cult/i, /grupo[_ ]?cult\w*[\s|:=]+([A-Za-z]+)/i), pend: fld(/pdte|pend/i, /(?:pdte|pend)\w*[\s|:=]+(-?[\d.,]+)/i), src }, gs = [];
     for (const e of p.getElementsByTagName('Point')) gs.push({ type: 'Point', coordinates: co(e.getElementsByTagName('coordinates')[0].textContent)[0] });
     for (const e of p.getElementsByTagName('LineString')) gs.push({ type: 'LineString', coordinates: co(e.getElementsByTagName('coordinates')[0].textContent) });
     for (const e of p.getElementsByTagName('Polygon')) gs.push({ type: 'Polygon', coordinates: [...e.getElementsByTagName('coordinates')].map(c => co(c.textContent)) });
@@ -657,7 +724,10 @@ function startCompass() {
 }
 function render() {
   const q = $('#q').value.toLowerCase(), box = $('#items'); box.textContent = ''; rows = [];
-  data.features.filter(f => f.properties.name.toLowerCase().includes(q)).slice(0, 300).forEach(f => {
+  const fs = data.features.filter(f => f.properties.name.toLowerCase().includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
+  if (me) fs.sort((a, b) => a.d - b.d);   // más cercanos primero
+  listSorted = !!me;
+  fs.slice(0, 300).forEach(({ f }) => {
     const d = document.createElement('div'), l = document.createElement('div'), s = document.createElement('small'), k = document.createElement('div'), a = document.createElement('div');
     d.className = 'i'; l.className = 'l'; k.className = 'k'; a.className = 'a';
     l.textContent = f.properties.name; s.textContent = f.geometry.type + (f.properties.uso ? ' · uso ' + f.properties.uso : ''); l.append(s);
