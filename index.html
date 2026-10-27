@@ -107,7 +107,15 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
+/* ---------- Instrumentación de errores visible ---------- */
+window.addEventListener('error', e => {
+  const m = document.getElementById('msg');
+  if (m) { m.textContent = 'ERROR: ' + (e.message || 'desconocido') + (e.lineno ? ' (línea ' + e.lineno + ')' : ''); m.style.display = 'block'; }
+  console.error('[Mapa3D]', e.error || e.message);
+});
+
 const $ = s => document.querySelector(s), R = Math.PI / 180;
+const easeOut = t => 1 - Math.pow(1 - t, 3);   // MOVIDO ARRIBA: antes estaba definido más abajo y focusFeature lo usaba antes de inicializarse
 const LS = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
              set: (k, v) => { try { localStorage.setItem(k, v); return 1; } catch (e) { return 0; } } };
 const EMPTY = { type: 'FeatureCollection', features: [] }, EXA = 1.5, CACHE = 'tiles-v1';
@@ -271,7 +279,6 @@ map.on('style.load', () => {
   map.addLayer({ id: 'kml-line', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': kmlColors.line, 'line-width': 3 } });
   map.addLayer({ id: 'kml-pts', type: 'circle', source: 'kml', filter: ['==', ['geometry-type'], 'Point'],
     paint: { 'circle-radius': 7, 'circle-color': kmlColors.pt, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-  // Capa de visitados (relleno verde por encima del fill normal)
   map.addLayer({ id: 'kml-visit', type: 'fill', source: 'kml',
     filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]],
     paint: { 'fill-color': '#2fb36b', 'fill-opacity': 0.45 } }, 'kml-case');
@@ -749,7 +756,6 @@ function stepSim(dt) {
 }
 
 let tOff = 0, d3busy = false;
-const easeOut = t => 1 - Math.pow(1 - t, 3);
 function terrainOffWhenFlat() {
   cancelAnimationFrame(tOff); const t0 = performance.now();
   const chk = t => { if (is3d) { tOff = 0; return; } if (map.getPitch() < 1.5 || t - t0 > 2500) { try { map.setTerrain(null); } catch (e) {} tOff = 0; return; } tOff = requestAnimationFrame(chk); };
