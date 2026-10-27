@@ -1,4 +1,10 @@
-<!DOCTYPE html>
+// ANTES
+if (isSel) { amarillo }
+else if (isVis) { verde }
+
+// AHORA
+if (isVis) { verde }
+else if (isSel) { amarillo }<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101614">
@@ -118,7 +124,6 @@ window.addEventListener('error', e => {
 
 const $ = s => document.querySelector(s), R = Math.PI / 180;
 
-/* ---------- on(): asigna handler si el elemento existe; acumula los que faltan ---------- */
 const missing = [];
 function on(sel, fn) {
   const el = document.querySelector(sel);
@@ -163,9 +168,6 @@ if (data && Array.isArray(data.features)) {
   });
 }
 
-/* ============================================================
-   Variables globales (arriba para evitar TDZ en style.load)
-   ============================================================ */
 let is3d = false, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
 let selectedFeature = null, gpsMode = 'general';
@@ -462,15 +464,22 @@ function updSelArrow() {
   const rot = b - map.getBearing();
   const p = $('#selArrowPath'); if (p) p.style.transform = `rotate(${rot}deg)`;
 }
+
+/* ============================================================
+   CAMBIO: el estado "visitado" (verde) tiene PRIORIDAD sobre
+   el estado "seleccionado" (amarillo). Así, al marcar un recinto
+   como visitado, su fila se ve verde en la lista aunque esté
+   seleccionado en ese momento.
+   ============================================================ */
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
     const f = el._feature;
     if (!f || !f.properties) return;
-    const isSel = selectedFeature && selectedFeature.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type;
     const isVis = visited.has(f.properties.id);
-    if (isSel) { el.style.background = '#f5c518'; el.style.color = '#06210f'; }
-    else if (isVis) { el.style.background = '#2fb36b'; el.style.color = '#06210f'; }
-    else { el.style.background = ''; el.style.color = ''; }
+    const isSel = selectedFeature && selectedFeature.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type;
+    if (isVis) { el.style.background = '#2fb36b'; el.style.color = '#06210f'; }        // visitado → verde (prioridad)
+    else if (isSel) { el.style.background = '#f5c518'; el.style.color = '#06210f'; }   // seleccionado → amarillo
+    else { el.style.background = ''; el.style.color = ''; }                            // normal
   });
 }
 async function warm(c, z, b) {
@@ -740,18 +749,21 @@ async function routeTo(d, re, f) {
   if (!line) prefetchRoute();
 }
 function showNav(rem, sec) {
-  $('#nav').style.display = 'block';
-  $('#eta').textContent = fmtT(sec) + ' · ' + fmtD(rem);
-  $('#sub').textContent = 'Llegada prevista a las ' + hhmm(sec);
+  const n = $('#nav'), e1 = $('#eta'), s1 = $('#sub');
+  if (n) n.style.display = 'block';
+  if (e1) e1.textContent = fmtT(sec) + ' · ' + fmtD(rem);
+  if (s1) s1.textContent = 'Llegada prevista a las ' + hhmm(sec);
 }
 function turns() {
   const T = $('#turn'), st = route.steps;
-  if (!st || st.length < 2 || !me) { T.classList.remove('show'); return; }
+  if (!st || st.length < 2 || !me) { if (T) T.classList.remove('show'); return; }
   let s = st[route.ni], d = dist(me, s.loc);
   while (d < 30 && route.ni < st.length - 1) { route.ni++; route.said = 0; s = st[route.ni]; d = dist(me, s.loc); }
-  T.classList.add('show');
-  $('#ta').textContent = ARW[s.type === 'arrive' ? 'arrive' : (s.type === 'roundabout' || s.type === 'rotary') ? 'rot' : s.mod] || '↑';
-  $('#td').textContent = fmtD(d); $('#tt').textContent = turnTxt(s);
+  if (T) T.classList.add('show');
+  const ta = $('#ta'), td = $('#td'), tt = $('#tt');
+  if (ta) ta.textContent = ARW[s.type === 'arrive' ? 'arrive' : (s.type === 'roundabout' || s.type === 'rotary') ? 'rot' : s.mod] || '↑';
+  if (td) td.textContent = fmtD(d);
+  if (tt) tt.textContent = turnTxt(s);
   updSpeed();
   if (!follow) return;
   if (d < 350 && route.said < 1) { route.said = 1; speak('En ' + Math.round(d / 10) * 10 + ' metros, ' + turnTxt(s).toLowerCase()); }
@@ -768,8 +780,12 @@ function progress() {
   if (bd > 150 && !sim && Date.now() - route.t > 20000) { route.t = Date.now(); speak('Recalculando ruta'); routeTo(route.d, true, route.f); }
 }
 function closeNav() {
-  route = null; sim = null; $('#nav').style.display = 'none'; $('#turn').classList.remove('show');
-  map.getSource('route').setData(EMPTY); map.getSource('dest').setData(EMPTY); setFollow(false); sync();
+  route = null; sim = null;
+  const n = $('#nav'); if (n) n.style.display = 'none';
+  const T = $('#turn'); if (T) T.classList.remove('show');
+  const r1 = map.getSource('route'), r2 = map.getSource('dest');
+  if (r1) r1.setData(EMPTY); if (r2) r2.setData(EMPTY);
+  setFollow(false); sync();
 }
 const to3d = () => { if (prev3d) { prev3d = false; set3d(true); } };
 on('#nGo', () => { if (!route) return; to3d(); startGps(); setFollow(true); });
@@ -1032,10 +1048,11 @@ function render() {
       l.append(s);
       d.append(l, k, a);
       d.onclick = () => { focusFeature(f); closeList(); };
-      if (selectedFeature && selectedFeature.properties && f.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
-        d.style.background = '#f5c518'; d.style.color = '#06210f';
-      } else if (visited.has(f.properties.id)) {
+      // PRIORIDAD: visitado (verde) > seleccionado (amarillo) > normal
+      if (visited.has(f.properties.id)) {
         d.style.background = '#2fb36b'; d.style.color = '#06210f';
+      } else if (selectedFeature && selectedFeature.properties && f.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
+        d.style.background = '#f5c518'; d.style.color = '#06210f';
       }
       box.append(d); rows.push({ f, k, a, el: d });
     });
@@ -1060,7 +1077,6 @@ on('#bL', () => panel('list'));
 
 if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('portrait').catch(() => {}); }
 
-/* ---------- Informe final de ids faltantes (si hubiera) ---------- */
 if (missing.length) {
   setTimeout(() => msg('Faltan en el HTML: ' + [...new Set(missing)].join(', ')), 500);
 }
