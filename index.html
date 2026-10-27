@@ -94,6 +94,8 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <div class="pn" id="lm"></div>
 <div class="pn" id="om"></div>
 <div class="pn" id="turn"><div id="ta">↑</div><div><div id="td"></div><div id="tt"></div></div><div class="spdbox" id="turnSpd"><b id="turnSpdVal">0</b><small>km/h</small></div></div>
+<div class="pn" id="nav"><div id="eta"></div><div id="sub"></div>
+  <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
 <div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"></div><div id="items"></div></div>
 <div id="msg"></div>
 <div id="colorDlg">
@@ -116,10 +118,11 @@ window.addEventListener('error', e => {
 
 const $ = s => document.querySelector(s), R = Math.PI / 180;
 
-/* ---------- on(): asigna un handler solo si el elemento existe; si no, reporta ---------- */
+/* ---------- on(): asigna handler si el elemento existe; acumula los que faltan ---------- */
+const missing = [];
 function on(sel, fn) {
   const el = document.querySelector(sel);
-  if (!el) { msg('ERROR: no existe el elemento ' + sel); return null; }
+  if (!el) { missing.push(sel); return null; }
   el.onclick = fn;
   return el;
 }
@@ -182,7 +185,7 @@ const btn = t => { const b = document.createElement('button'); b.className = 'b'
 const fmtD = m => m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' km';
 const fmtT = s => { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; };
 const hhmm = s => new Date(Date.now() + s * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-function msg(t) { const m = $('#msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(msg.t); msg.t = setTimeout(() => m.style.display = 'none', 4500); }
+function msg(t) { const m = $('#msg'); if (!m) return; m.textContent = t; m.style.display = 'block'; clearTimeout(msg.t); msg.t = setTimeout(() => m.style.display = 'none', 4500); }
 function speak(t) {
   if (!opts.voice || !window.speechSynthesis) return;
   speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'es-ES'; speechSynthesis.speak(u);
@@ -450,13 +453,14 @@ function selectForce(f, quiet) {
 }
 function updSelArrow() {
   const el = $('#selArrow');
+  if (!el) return;
   if (!selectedFeature) { el.classList.remove('on'); return; }
   el.classList.add('on');
   const origin = me || map.getCenter().toArray();
   const c = ptOf(selectedFeature);
   const b = brg(origin, c);
   const rot = b - map.getBearing();
-  $('#selArrowPath').style.transform = `rotate(${rot}deg)`;
+  const p = $('#selArrowPath'); if (p) p.style.transform = `rotate(${rot}deg)`;
 }
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
@@ -793,7 +797,7 @@ function set3d(on, noCam) {
   if (d3busy && !noCam) return;
   d3busy = true;
   const was = is3d;
-  is3d = on; $('#b3').classList.toggle('on', on); applyVis();
+  is3d = on; const b3 = $('#b3'); if (b3) b3.classList.toggle('on', on); applyVis();
   try {
     if (on) {
       cancelAnimationFrame(tOff); tOff = 0;
@@ -821,14 +825,15 @@ function setBase(id) {
   applyVis(); menu();
 }
 function menu() {
-  const m = $('#lm'); m.textContent = '';
+  const m = $('#lm'); if (!m) return; m.textContent = '';
   BASES.forEach(b => { const x = btn((b.id === sel ? '● ' : '○ ') + b.n); x.onclick = () => { setBase(b.id); panel('lm'); }; m.append(x); });
-  const o = btn('+ Cargar mapa offline (.pmtiles)'); o.onclick = () => $('#fP').click(); m.append(o);
+  const o = btn('+ Cargar mapa offline (.pmtiles)'); o.onclick = () => { const f = $('#fP'); if (f) f.click(); }; m.append(o);
 }
 function panel(id) {
   openP = openP === id ? null : id;
   [['lm', 'flex', 'bC'], ['om', 'flex', 'bO'], ['list', 'block', 'bL']].forEach(([k, d, b]) => {
-    $('#' + k).style.display = k === openP ? d : 'none'; $('#' + b).classList.toggle('on', k === openP);
+    const el = $('#' + k); if (el) el.style.display = k === openP ? d : 'none';
+    const bEl = $('#' + b); if (bEl) bEl.classList.toggle('on', k === openP);
   });
   if (openP === 'lm') menu();
   if (openP === 'om') optMenu();
@@ -840,27 +845,39 @@ function panel(id) {
 }
 on('#bC', () => panel('lm'));
 
-$('#fP').onchange = async e => {
-  for (const f of e.target.files) {
-    try {
-      const p = new pmtiles.PMTiles(new pmtiles.FileSource(f)); proto.add(p);
-      const h = await p.getHeader(), url = 'pmtiles://' + f.name;
-      if (/dem|mdt|terrain|terrarium/i.test(f.name)) { addDem({ url }); msg('Relieve offline cargado'); }
-      else {
-        const id = 'off' + BASES.length;
-        map.addSource(id, { type: 'raster', url, tileSize: 256 });
-        map.addLayer({ id: 'b-' + id, type: 'raster', source: id, layout: { visibility: 'none' } }, 'hill');
-        BASES.push({ id, n: 'Offline: ' + f.name }); setBase(id);
-        map.fitBounds([[h.minLon, h.minLat], [h.maxLon, h.maxLat]], { animate: false });
-        msg('Mapa offline cargado');
-      }
-    } catch (err) { msg(f.name + ': ' + err.message); }
-  }
-  e.target.value = ''; if (openP === 'lm') panel('lm');
-};
+(function initFileInputs() {
+  const fP = $('#fP'); if (fP) fP.onchange = async e => {
+    for (const f of e.target.files) {
+      try {
+        const p = new pmtiles.PMTiles(new pmtiles.FileSource(f)); proto.add(p);
+        const h = await p.getHeader(), url = 'pmtiles://' + f.name;
+        if (/dem|mdt|terrain|terrarium/i.test(f.name)) { addDem({ url }); msg('Relieve offline cargado'); }
+        else {
+          const id = 'off' + BASES.length;
+          map.addSource(id, { type: 'raster', url, tileSize: 256 });
+          map.addLayer({ id: 'b-' + id, type: 'raster', source: id, layout: { visibility: 'none' } }, 'hill');
+          BASES.push({ id, n: 'Offline: ' + f.name }); setBase(id);
+          map.fitBounds([[h.minLon, h.minLat], [h.maxLon, h.maxLat]], { animate: false });
+          msg('Mapa offline cargado');
+        }
+      } catch (err) { msg(f.name + ': ' + err.message); }
+    }
+    e.target.value = ''; if (openP === 'lm') panel('lm');
+  };
+  const fK = $('#fK'); if (fK) fK.onchange = async e => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (!files.length) return;
+    const kc = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
+    if (map.getLayer('kml-pts')) map.setPaintProperty('kml-pts', 'circle-color', kc.pt);
+    if (map.getLayer('kml-line')) map.setPaintProperty('kml-line', 'line-color', kc.line);
+    if (map.getLayer('kml-fill')) map.setPaintProperty('kml-fill', 'fill-color', kc.poly);
+    showColorDlg(files);
+  };
+})();
 
 function optMenu() {
-  const m = $('#om'); m.textContent = '';
+  const m = $('#om'); if (!m) return; m.textContent = '';
   [['labels', 'Nombres de puntos'], ['voice', 'Voz'], ['haptic', 'Vibración y sonido'], ['bld', 'Edificios 3D (parado)'], ['listOnlyPts', 'Lista solo puntos']].forEach(([k, n]) => {
     const b = btn((opts[k] ? '☑  ' : '☐  ') + n);
     b.onclick = () => { opts[k] = !opts[k]; LS.set('opts', JSON.stringify(opts)); if (k === 'voice' && !opts.voice && window.speechSynthesis) speechSynthesis.cancel(); labels(); applyVis(); if (k === 'listOnlyPts') render(); optMenu(); };
@@ -870,13 +887,15 @@ function optMenu() {
   r.innerHTML = 'Radio <select id="oR">' + [300, 600, 1000].map(v => `<option value="${v}"${+opts.r === v ? ' selected' : ''}>${v} m</option>`).join('') +
     '</select> Zoom máx. <select id="oZ">' + [16, 17, 18].map(v => `<option${+opts.z === v ? ' selected' : ''}>${v}</option>`).join('') + '</select>';
   m.append(r);
-  r.querySelector('#oR').onchange = e => { opts.r = +e.target.value; LS.set('opts', JSON.stringify(opts)); };
-  r.querySelector('#oZ').onchange = e => { opts.z = +e.target.value; LS.set('opts', JSON.stringify(opts)); };
+  const rS = r.querySelector('#oR'), zS = r.querySelector('#oZ');
+  if (rS) rS.onchange = e => { opts.r = +e.target.value; LS.set('opts', JSON.stringify(opts)); };
+  if (zS) zS.onchange = e => { opts.z = +e.target.value; LS.set('opts', JSON.stringify(opts)); };
   const ic = document.createElement('div'); ic.className = 'row';
   ic.innerHTML = 'Icono <select id="oI">' + [['red', 'Coche rojo'], ['blue', 'Coche azul'], ['green', 'Coche verde'], ['yellow', 'Coche amarillo'], ['white', 'Coche blanco'], ['black', 'Coche negro'], ['dot', 'Punto azul con pulso']]
     .map(([v, n]) => `<option value="${v}"${opts.icon === v ? ' selected' : ''}>${n}</option>`).join('') + '</select>';
   m.append(ic);
-  ic.querySelector('#oI').onchange = e => { opts.icon = e.target.value; LS.set('opts', JSON.stringify(opts)); updIcons(); };
+  const iS = ic.querySelector('#oI');
+  if (iS) iS.onchange = e => { opts.icon = e.target.value; LS.set('opts', JSON.stringify(opts)); updIcons(); };
   const d = btn(job ? 'Cancelar descarga' : 'Descargar mapa cerca de los puntos'); d.onclick = dlZone; m.append(d);
   const x = btn('Borrar mapas descargados'); x.onclick = async () => { if (window.caches && confirm('¿Borrar todos los mapas descargados?')) { await caches.delete(CACHE); msg('Caché de mapas borrada'); } }; m.append(x);
   const c = btn('Colores de importación KMZ'); c.onclick = () => { optMenuClose(); showColorDlg(null); }; m.append(c);
@@ -894,7 +913,7 @@ function showColorDlg(files) {
   if (p) p.value = c.pt; if (l) l.value = c.line; if (y) y.value = c.poly; if (d) d.style.display = 'block';
 }
 on('#colOk', async () => {
-  opts.kmlColors = { pt: $('#colPt').value, line: $('#colLine').value, poly: $('#colPoly').value };
+  opts.kmlColors = { pt: ($('#colPt') || {}).value, line: ($('#colLine') || {}).value, poly: ($('#colPoly') || {}).value };
   LS.set('opts', JSON.stringify(opts));
   if (map.getLayer('kml-pts')) map.setPaintProperty('kml-pts', 'circle-color', opts.kmlColors.pt);
   if (map.getLayer('kml-line')) map.setPaintProperty('kml-line', 'line-color', opts.kmlColors.line);
@@ -953,17 +972,7 @@ function save() {
   labels();
   if (map.getLayer('kml-visit')) map.setFilter('kml-visit', ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]]);
 }
-on('#bK', () => $('#fK').click());
-$('#fK').onchange = async e => {
-  const files = [...e.target.files];
-  e.target.value = '';
-  if (!files.length) return;
-  const kc = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
-  if (map.getLayer('kml-pts')) map.setPaintProperty('kml-pts', 'circle-color', kc.pt);
-  if (map.getLayer('kml-line')) map.setPaintProperty('kml-line', 'line-color', kc.line);
-  if (map.getLayer('kml-fill')) map.setPaintProperty('kml-fill', 'fill-color', kc.poly);
-  showColorDlg(files);
-};
+on('#bK', () => { const f = $('#fK'); if (f) f.click(); });
 async function importKmzFiles(files) {
   let n = 0, bad = 0;
   for (const f of files) {
@@ -1001,7 +1010,8 @@ function regadioOf(f) {
 }
 function render() {
   try {
-    const q = ($('#q').value || '').toLowerCase(), box = $('#items'); box.textContent = ''; rows = [];
+    const qEl = $('#q'), box = $('#items'); if (!box) return;
+    const q = (qEl && qEl.value || '').toLowerCase(); box.textContent = ''; rows = [];
     let fs = data.features || [];
     if (opts.listOnlyPts) fs = fs.filter(f => f && f.geometry && f.geometry.type === 'Point');
     fs = fs.filter(f => safeName(f).includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
@@ -1043,11 +1053,16 @@ function upd() {
     });
   } catch (e) { msg('upd: ' + e.message); }
 }
-setInterval(() => { if ($('#list').style.display === 'block') upd(); updSelArrow(); updSpeed(); }, 1000);
+setInterval(() => { const l = $('#list'); if (l && l.style.display === 'block') upd(); updSelArrow(); updSpeed(); }, 1000);
 function closeList() { if (openP === 'list') panel('list'); }
 on('#bL', () => panel('list'));
-$('#q').oninput = render;
+{ const qEl = $('#q'); if (qEl) qEl.oninput = render; }
 
 if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('portrait').catch(() => {}); }
+
+/* ---------- Informe final de ids faltantes (si hubiera) ---------- */
+if (missing.length) {
+  setTimeout(() => msg('Faltan en el HTML: ' + [...new Set(missing)].join(', ')), 500);
+}
 </script>
 </body></html>
