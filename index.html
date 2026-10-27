@@ -306,7 +306,7 @@ map.on('contextmenu', e => popup({ name: 'Punto elegido en el mapa' }, [e.lngLat
 map.on('dragstart', () => { if (follow && !sim) setFollow(false); });
 map.on('zoom', e => { if (e.originalEvent) zT = camZ = map.getZoom(); });
 map.on('pitch', e => { if (e.originalEvent && follow) pT = camP = map.getPitch(); });
-map.on('rotate', () => { const b = map.getBearing(); $('#cmp svg').style.transform = `rotate(${-b}deg)`; $('#cd').textContent = Math.round((b + 360) % 360) + '°'; });
+map.on('rotate', () => { const b = map.getBearing(); $('#cmp svg').style.transform = `rotate(${-b}deg)`; $('#cd').textContent = Math.round((b + 360) % 360) + '°'; updSelArrow(); });
 map.on('moveend', () => { if (!lt) lt = setTimeout(() => { lt = 0; labels(); }, follow ? 1500 : 200); });
 function applyRot() { const rot = cmode === 'M'; map.dragRotate[rot ? 'enable' : 'disable'](); map.touchZoomRotate[rot ? 'enableRotation' : 'disableRotation'](); }
 function applyLock() {
@@ -374,7 +374,6 @@ function select(f, quiet) {
   updSelArrow(); updListSelection();
   return poly;
 }
-// Selecciona SIEMPRE (no toggle) — para uso desde la lista
 function selectForce(f, quiet) {
   selF = f; selectedFeature = f;
   const poly = recinto(f);
@@ -383,24 +382,17 @@ function selectForce(f, quiet) {
   updSelArrow(); updListSelection();
   return poly;
 }
-
-/* ---------- Flecha hacia el recinto seleccionado ---------- */
 function updSelArrow() {
   const el = $('#selArrow');
   if (!selectedFeature) { el.classList.remove('on'); return; }
   el.classList.add('on');
-  // Origen: posición GPS si existe, si no el centro del mapa
   const origin = me || map.getCenter().toArray();
   const c = ptOf(selectedFeature);
   const b = brg(origin, c);
-  // La flecha se orienta en pantalla: si el mapa está girado, compensamos
   const rot = b - map.getBearing();
   const p = $('#selArrowPath');
   p.style.transform = `rotate(${rot}deg)`;
-  p.style.transformBox = 'fill-box';
-  p.style.transformOrigin = 'center';
 }
-
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
     const f = el._feature;
@@ -418,7 +410,6 @@ async function warm(c, z, b) {
   try { await Promise.race([fetchTiles(keys, null, { stop: false }), new Promise(res => setTimeout(res, 250))]); } catch (e) {}
 }
 async function focusFeature(f, quiet) {
-  // CAMBIO: seleccionar SIEMPRE (sin toggle), para que tocar en la lista no deseleccione
   const poly = selectForce(f, quiet);
   if (is3d) { prev3d = true; set3d(false, true); }
   setFollow(false);
@@ -492,7 +483,6 @@ function tick(t) {
   if (wid === null && !sim && cmode !== 'A') { raf = 0; return; }
   if (dev != null) devS = devS == null ? dev : ang(devS, dev, 1 - Math.exp(-dt * 6));
   if (sim) stepSim(dt);
-  // GIRO AUTOMÁTICO (sin follow): sensor del móvil; si no hay, rumbo GPS; si no, rumbo del coche
   if (cmode === 'A' && !follow) {
     const b = devS != null ? devS : (tgt ? tgt.hdg : (car.on ? car.hdg : null));
     if (b != null) map.jumpTo({ bearing: b });
@@ -551,11 +541,27 @@ function setFollow(on) {
   if (on) { camZ = map.getZoom(); zT = is3d ? 16.4 : 16.9; camB = map.getBearing(); camP = map.getPitch(); pT = route ? 80 : 62; }
   setPad(); applyVis(); applyLock(); updIcons(); updSpeed(); sync();
 }
+
+/* ---------- sync(): texto e icono del botón GPS según modo ---------- */
 function sync() {
   const on = wid !== null || sim;
-  $('#bG').classList.toggle('on', !!on); $('#bG').textContent = !on ? 'GPS' : follow ? 'Siguiendo' : 'Centrar';
+  const b = $('#bG');
+  b.classList.toggle('on', !!on);
+  b.textContent = !on ? 'GPS'
+    : sim ? 'Simulación'
+    : gpsMode === 'selected' ? 'Recinto'
+    : gpsMode === 'current' ? 'Posición'
+    : 'Mapa';
   updSpeed();
 }
+
+/* ---------- Parar GPS y limpiar estado de seguimiento ---------- */
+function stopGps() {
+  if (wid !== null) { try { navigator.geolocation.clearWatch(wid); } catch (e) {} wid = null; }
+  sim = null; car.on = false; tgt = null;
+  setFollow(false); updIcons(); updSelArrow();
+}
+
 function startGps() {
   if (wid !== null) return;
   if (!navigator.geolocation) return msg('Este navegador no tiene geolocalización');
@@ -565,21 +571,45 @@ function startGps() {
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
   loop();
 }
+
+/* ---------- Botón GPS: ciclo Posición ↔ Recinto (si hay) / Posición ↔ Mapa general (si no) ---------- */
 $('#bG').onclick = () => {
   const on = wid !== null || sim;
   if (!on) {
+    // GPS apagado → encender y llevar a posición actual
     startGps();
-    if (selectedFeature) { gpsMode = 'selected'; focusFeature(selectedFeature, true); }
-    else { gpsMode = 'current'; setFollow(true); }
-    return;
+    gpsMode = 'current';
+    setFollow(true);
+    if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
+    else msg('Esperando señal GPS…');
+    return sync();
   }
   if (gpsMode === 'current') {
-    if (selectedFeature) { gpsMode = 'selected'; focusFeature(selectedFeature, true); setFollow(false); }
-    else { gpsMode = 'general'; if (wid !== null) navigator.geolocation.clearWatch(wid); wid = null; sim = null; car.on = false; tgt = null; me = null; setFollow(false); updIcons(); }
+    if (selectedFeature) {
+      // Posición → Recinto
+      gpsMode = 'selected';
+      setFollow(false);
+      focusFeature(selectedFeature, true);
+      msg('Recinto: ' + selectedFeature.properties.name);
+    } else {
+      // Posición → Mapa general (sin recinto)
+      stopGps();
+      gpsMode = 'general';
+      msg('Mapa general');
+    }
   } else if (gpsMode === 'selected') {
-    gpsMode = 'general'; if (wid !== null) navigator.geolocation.clearWatch(wid); wid = null; sim = null; car.on = false; tgt = null; me = null; setFollow(false); updIcons();
+    // Recinto → Posición
+    gpsMode = 'current';
+    setFollow(true);
+    if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
+    msg('Posición actual');
   } else {
-    gpsMode = 'current'; setFollow(true);
+    // Mapa general → Posición
+    if (wid === null) startGps();
+    gpsMode = 'current';
+    setFollow(true);
+    if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
+    else msg('Esperando señal GPS…');
   }
   sync();
 };
@@ -603,7 +633,6 @@ function startCompass() {
     startCompass.reg = 1; startCompass.on = 1;
     addEventListener('deviceorientationabsolute', h, true);
     addEventListener('deviceorientation', h, true);
-    // Si en 1.5 s no llega ningún valor, el permiso se denegó o no hay sensor → permitir reintento
     setTimeout(() => { if (dev == null) { startCompass.on = 0; startCompass.reg = 0; } }, 1500);
   };
   if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) {
