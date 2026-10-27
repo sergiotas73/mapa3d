@@ -31,18 +31,15 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .dot{position:absolute;left:-10px;top:-10px;width:20px;height:20px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-sizing:border-box;box-shadow:0 0 8px #000a}
 .cone{position:absolute;left:-80px;top:-80px;width:160px;height:160px;border-radius:50%;background:conic-gradient(from -32deg,rgba(61,220,132,.65) 0deg 64deg,transparent 64deg);-webkit-mask:radial-gradient(circle,#000 6%,transparent 70%);mask:radial-gradient(circle,#000 6%,transparent 70%)}
 @keyframes pl{0%{transform:scale(1);opacity:.9}100%{transform:scale(4);opacity:0}}
-/* CAMBIO 1: cuadro de direcciones arriba en el centro; la velocidad va dentro */
 #turn{left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0));width:min(92vw,360px);border-radius:16px;padding:10px 14px;display:none;flex-direction:row;align-items:center;gap:12px}
 #turn.show{display:flex}
 #ta{font-size:40px;line-height:1;flex:0 0 auto}
 #td{font:700 22px system-ui,sans-serif}
 #tt{font-size:13px;opacity:.9;margin-top:2px}
-/* velocidad dentro del cuadro de direcciones */
 #turn .spdbox{margin-left:auto;flex:0 0 auto;text-align:center;padding:4px 10px;border-radius:12px;background:#ffffff1c;min-width:66px}
 #turn .spdbox small{display:block;font:600 9px system-ui;opacity:.8;letter-spacing:.5px}
 #turn .spdbox b{display:block;font:700 22px system-ui;line-height:1}
 #turn .spdbox.hi{background:#ff4d3d;color:#fff}
-/* El indicador de velocidad flotante ya no se usa (queda por compatibilidad oculto) */
 #spd{display:none!important}
 #nav{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0));padding:12px 16px;border-radius:20px}
 #eta{font:700 24px system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -64,6 +61,8 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .maplibregl-popup-content{color:#17201b;border-radius:12px;max-width:250px;padding:14px 16px}
 .maplibregl-popup-close-button{font-size:32px;width:42px;height:42px;line-height:36px;color:#17201b}
 .maplibregl-popup-content .go{margin-top:8px;width:100%;border:0;border-radius:8px;padding:10px;font:600 14px system-ui}
+.maplibregl-popup-content .visit{margin-top:8px;width:100%;border:0;border-radius:8px;padding:10px;font:600 14px system-ui;background:#e5392f;color:#fff}
+.maplibregl-popup-content .visit.done{background:#2fb36b;color:#06210f}
 #selArrow{position:absolute;left:10px;top:calc(64px + env(safe-area-inset-top,0));z-index:6;width:52px;height:52px;display:none;background:var(--gl);border-radius:14px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-sizing:border-box;padding:6px}
 #selArrow svg{width:40px;height:40px;display:block;margin:0 auto}
 #selArrow.on{display:block;background:var(--ac)}
@@ -90,15 +89,14 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <button class="b" id="bG">GPS</button><button class="b" id="bO">Opciones</button>
 </div>
 <div id="cmp"><svg viewBox="0 0 40 40"><path d="M20 2L29 22H11Z" fill="#ff4d3d"/><path d="M20 38L29 22H11Z" fill="#e8eeea"/><text x="20" y="19" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">N</text></svg><span id="cd">0°</span><b id="cm">MANUAL</b></div>
-<div id="selArrow"><svg viewBox="0 0 40 40"><path id="selArrowPath" d="M20 4L32 32H8Z" fill="#2a7fff"/></svg></div>
+<!-- CAMBIO 6: flecha más afilada (triángulo isósceles estrecho) -->
+<div id="selArrow"><svg viewBox="0 0 40 40"><path id="selArrowPath" d="M20 2L28 36H12Z" fill="#2a7fff"/></svg></div>
 <div id="mode"></div>
 <div class="pn" id="lm"></div>
 <div class="pn" id="om"></div>
-<!-- CAMBIO 1: cuadro de direcciones con la velocidad integrada -->
 <div class="pn" id="turn"><div id="ta">↑</div><div><div id="td"></div><div id="tt"></div></div><div class="spdbox" id="turnSpd"><b id="turnSpdVal">0</b><small>km/h</small></div></div>
-<div class="pn" id="nav"><div id="eta"></div><div id="sub"></div>
-  <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
-<div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"><button class="b" id="bX">Borrar todo</button></div><div id="items"></div></div>
+<!-- CAMBIO 1: se elimina el botón "Borrar todo" del encabezado de la lista -->
+<div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"></div><div id="items"></div></div>
 <div id="msg"></div>
 <div id="colorDlg">
   <h3>Colores de importación</h3>
@@ -143,6 +141,9 @@ data.features.forEach((f, i) => f.properties.id = i);
 let is3d = false, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
 let selectedFeature = null, gpsMode = 'general';
+// CAMBIO 3: set de visitados (ids de feature)
+let visited = new Set();
+try { const v = JSON.parse(LS.get('visited') || '[]'); v.forEach(i => visited.add(i)); } catch (e) {}
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
 
 const dist = (a, b) => Math.hypot((b[0] - a[0]) * R * Math.cos((a[1] + b[1]) / 2 * R), (b[1] - a[1]) * R) * 6371008;
@@ -161,6 +162,7 @@ function speak(t) {
   if (!opts.voice || !window.speechSynthesis) return;
   speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'es-ES'; speechSynthesis.speak(u);
 }
+function saveVisited() { LS.set('visited', JSON.stringify([...visited])); }
 
 /* ---------- Vibración y sonido ---------- */
 function buzz(p) { if (opts.haptic && navigator.vibrate) try { navigator.vibrate(p); } catch (e) {} }
@@ -272,6 +274,9 @@ map.on('style.load', () => {
   map.addLayer({ id: 'kml-line', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': kmlColors.line, 'line-width': 3 } });
   map.addLayer({ id: 'kml-pts', type: 'circle', source: 'kml', filter: ['==', ['geometry-type'], 'Point'],
     paint: { 'circle-radius': 7, 'circle-color': kmlColors.pt, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+  // CAMBIO 3: capa para polígonos visitados (verde), por encima del relleno normal
+  map.addLayer({ id: 'kml-visit', type: 'fill', source: 'kml', filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]],
+    paint: { 'fill-color': '#2fb36b', 'fill-opacity': 0.45 } }, 'kml-case');
   map.addSource('sel', { type: 'geojson', data: EMPTY });
   map.addLayer({ id: 'sel-line', type: 'line', source: 'sel', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#3ddc84', 'line-width': 4.5 } });
   map.addLayer({ id: 'sel-pt', type: 'circle', source: 'sel', filter: ['==', ['geometry-type'], 'Point'],
@@ -331,12 +336,39 @@ function setMode(m) {
 }
 $('#cmp').onclick = () => setMode({ M: 'N', N: 'A', A: 'M' }[cmode]);
 
+/* CAMBIO 3: popup con botón Visitado / Ir aquí */
 function popup(p, c, f) {
   const d = document.createElement('div'), h = document.createElement('b');
   h.textContent = p.name; d.append(h);
   if (p.desc) { const t = document.createElement('div'); t.textContent = p.desc; d.append(t); }
   const g = document.createElement('button'); g.className = 'go'; g.textContent = 'Ir aquí';
   g.onclick = () => { pop.remove(); routeTo(c, false, f); }; d.append(g);
+  // Botón Visitado (solo si hay feature de polígono identificable)
+  if (f && (f.geometry.type === 'Polygon' || recinto(f))) {
+    const target = f.geometry.type === 'Polygon' ? f : recinto(f);
+    const v = document.createElement('button');
+    const markVisited = (feature) => {
+      const isVis = visited.has(feature.properties.id);
+      v.textContent = isVis ? 'Visitado ✓' : 'Visitado';
+      v.classList.toggle('done', isVis);
+      v.className = 'visit' + (isVis ? ' done' : '');
+    };
+    markVisited(target);
+    v.onclick = () => {
+      if (visited.has(target.properties.id)) visited.delete(target.properties.id); else visited.add(target.properties.id);
+      saveVisited();
+      markVisited(target);
+      // Actualizar capa de visitados
+      if (map.getLayer('kml-visit')) {
+        map.setFilter('kml-visit', ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]]);
+      }
+      // Actualizar lista
+      render(); updListSelection();
+      msg(visited.has(target.properties.id) ? 'Recinto marcado como visitado' : 'Recinto marcado como no visitado');
+      buzz([20, 40, 20]);
+    };
+    d.append(v);
+  }
   const pop = new maplibregl.Popup({ maxWidth: '250px' }).setLngLat(c).setDOMContent(d).addTo(map);
 }
 
@@ -357,12 +389,18 @@ map.on('terrain', () => { if (opts.labels) setTimeout(labels, 300); });
 /* ---------- Selección de punto ---------- */
 const recinto = f => f.geometry.type === 'Polygon' ? f : data.features.find(g => g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0]));
 const usoOf = f => { const p = f.properties, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
+// CAMBIO 5: pendiente dividida entre 10 para el dato por voz
 function usoSay(f) {
   const p = recinto(f), g = k => String(f.properties[k] || (p && p.properties[k]) || '').trim();
-  const u = usoOf(f) || (p ? usoOf(p) : ''), gr = g('grupo'), pe = g('pend').replace('.', ','); let s = '';
+  const u = usoOf(f) || (p ? usoOf(p) : ''), gr = g('grupo'), pe = g('pend');
+  let s = '';
   if (u) s += 'Uso SIGPAC: ' + (USO[u.toUpperCase()] || u) + '. ';
   if (gr) s += 'Grupo de cultivo: ' + (GRUPO[gr.toUpperCase()] || gr) + '. ';
-  if (pe) s += 'Pendiente: ' + pe + ' por ciento. ';
+  if (pe) {
+    const num = parseFloat(String(pe).replace(',', '.'));
+    const val = isNaN(num) ? String(pe).replace('.', ',') : (num / 10).toLocaleString('es-ES', { maximumFractionDigits: 1 });
+    s += 'Pendiente: ' + val + ' por ciento. ';
+  }
   return s;
 }
 function select(f, quiet) {
@@ -397,14 +435,16 @@ function updSelArrow() {
   const rot = b - map.getBearing();
   $('#selArrowPath').style.transform = `rotate(${rot}deg)`;
 }
+/* CAMBIO 2 y 3: la selección en lista es amarilla; los visitados son verdes */
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
     const f = el._feature;
-    if (f && selectedFeature && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
-      el.style.background = '#3ddc84'; el.style.color = '#06210f';
-    } else {
-      el.style.background = ''; el.style.color = '';
-    }
+    if (!f) return;
+    const isSel = selectedFeature && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type;
+    const isVis = visited.has(f.properties.id);
+    if (isSel) { el.style.background = '#f5c518'; el.style.color = '#06210f'; }
+    else if (isVis) { el.style.background = '#2fb36b'; el.style.color = '#06210f'; }
+    else { el.style.background = ''; el.style.color = ''; }
   });
 }
 async function warm(c, z, b) {
@@ -527,12 +567,10 @@ function fix(lng, lat, h, sp) {
   updSelArrow(); updSpeed();
 }
 
-/* ---------- CAMBIO 1: indicador de velocidad dentro del cuadro de direcciones ---------- */
 function updSpeed() {
   const el = $('#turnSpd'), v = $('#turnSpdVal');
   if (!el || !v) return;
   const kmh = Math.round((speed || 0) * 3.6);
-  // Se muestra siempre que haya GPS activo y el cuadro de direcciones visible
   v.textContent = kmh;
   el.classList.toggle('hi', kmh > 120);
 }
@@ -576,7 +614,6 @@ function startGps() {
   loop();
 }
 
-/* ---------- Vista "mapa general" ---------- */
 function showGeneral() {
   if (data.features.length) {
     const b = new maplibregl.LngLatBounds();
@@ -586,7 +623,6 @@ function showGeneral() {
   map.easeTo({ center: [-0.5, 39.4], zoom: 9, duration: 700 });
 }
 
-/* ---------- Botón GPS ---------- */
 $('#bG').onclick = () => {
   const gpsOn = wid !== null || sim;
   if (!gpsOn) {
@@ -731,28 +767,39 @@ function stepSim(dt) {
   fix(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, brg(a, b), 17);
 }
 
-/* ---------- 3D ---------- */
-let tOff = 0;
+/* ---------- CAMBIO 4: 3D robusto (no se queda colgado) ---------- */
+let tOff = 0, d3busy = false;
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 function terrainOffWhenFlat() {
   cancelAnimationFrame(tOff); const t0 = performance.now();
-  const chk = t => { if (is3d) return; if (map.getPitch() < 1.5 || t - t0 > 2500) { map.setTerrain(null); return; } tOff = requestAnimationFrame(chk); };
+  const chk = t => { if (is3d) { tOff = 0; return; } if (map.getPitch() < 1.5 || t - t0 > 2500) { try { map.setTerrain(null); } catch (e) {} tOff = 0; return; } tOff = requestAnimationFrame(chk); };
   tOff = requestAnimationFrame(chk);
 }
 function set3d(on, noCam) {
+  if (d3busy && !noCam) return; // evita dobles clics que descuadran el estado
+  d3busy = true;
   const was = is3d;
   is3d = on; $('#b3').classList.toggle('on', on); applyVis();
-  if (on) {
-    cancelAnimationFrame(tOff);
-    const has = map.getTerrain ? map.getTerrain() : map.terrain;
-    if (map.getSource('dem') && !has) map.setTerrain({ source: 'dem', exaggeration: EXA });
-    if (map.getSource('dem') && !(map.getTerrain ? map.getTerrain() : map.terrain)) {
-      setTimeout(() => { if (is3d && map.getSource('dem') && !(map.getTerrain ? map.getTerrain() : map.terrain)) map.setTerrain({ source: 'dem', exaggeration: EXA }); }, 200);
+  try {
+    if (on) {
+      cancelAnimationFrame(tOff); tOff = 0;
+      const has = map.getTerrain ? map.getTerrain() : map.terrain;
+      if (map.getSource('dem') && !has) map.setTerrain({ source: 'dem', exaggeration: EXA });
+      // Si el DEM aún no está listo, reintentar una vez tras 200 ms
+      if (map.getSource('dem') && !(map.getTerrain ? map.getTerrain() : map.terrain)) {
+        setTimeout(() => {
+          try { if (is3d && map.getSource('dem') && !(map.getTerrain ? map.getTerrain() : map.terrain)) map.setTerrain({ source: 'dem', exaggeration: EXA }); } catch (e) {}
+        }, 200);
+      }
+    } else {
+      terrainOffWhenFlat();
     }
-  } else terrainOffWhenFlat();
-  if (follow) setPad(); else if (!noCam && was !== on) map.easeTo({ pitch: on ? 62 : 0, duration: 650, easing: easeOut });
-  setTimeout(labels, 400);
+    if (follow) setPad(); else if (!noCam && was !== on) map.easeTo({ pitch: on ? 62 : 0, duration: 650, easing: easeOut });
+  } catch (e) { msg('3D: ' + e.message); }
+  setTimeout(() => { try { labels(); } catch (e) {} }, 400);
   updSpeed();
+  // Liberar el flag tras un breve margen para permitir el siguiente clic
+  setTimeout(() => { d3busy = false; }, 250);
 }
 $('#b3').onclick = () => { prev3d = false; set3d(!is3d); };
 
@@ -823,6 +870,10 @@ function optMenu() {
   const d = btn(job ? 'Cancelar descarga' : 'Descargar mapa cerca de los puntos'); d.onclick = dlZone; m.append(d);
   const x = btn('Borrar mapas descargados'); x.onclick = async () => { if (window.caches && confirm('¿Borrar todos los mapas descargados?')) { await caches.delete(CACHE); msg('Caché de mapas borrada'); } }; m.append(x);
   const c = btn('Colores de importación KMZ'); c.onclick = () => { optMenuClose(); showColorDlg(null); }; m.append(c);
+  // CAMBIO 1: mover aquí "Borrar todo"
+  const z = btn('Borrar todos los puntos'); z.onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; visited.clear(); saveVisited(); selectedFeature = null; map.getSource('sel').setData(EMPTY); updSelArrow(); save(); render(); optMenu(); } }; m.append(z);
+  // Extra útil: reiniciar visitados
+  const v = btn('Borrar marcas de visitados'); v.onclick = () => { visited.clear(); saveVisited(); if (map.getLayer('kml-visit')) map.setFilter('kml-visit', ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', []]]]); render(); msg('Marcas de visitados borradas'); optMenu(); }; m.append(v);
 }
 function optMenuClose() { if (openP === 'om') panel('om'); }
 $('#bO').onclick = () => panel('om');
@@ -894,6 +945,8 @@ function save() {
   const s = map.getSource('kml'); if (s) s.setData(data);
   if (!LS.set('kmz-data', JSON.stringify(data))) msg('No se pudo guardar en el dispositivo (demasiados datos)');
   labels();
+  // Refrescar capa de visitados por si cambiaron ids
+  if (map.getLayer('kml-visit')) map.setFilter('kml-visit', ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]]);
 }
 $('#bK').onclick = () => $('#fK').click();
 $('#fK').onchange = async e => {
@@ -964,8 +1017,11 @@ function render() {
     l.append(s);
     d.append(l, k, a);
     d.onclick = () => { focusFeature(f); closeList(); };
+    // CAMBIO 2 y 3: selección amarilla, visitados verdes
     if (selectedFeature && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
-      d.style.background = '#3ddc84'; d.style.color = '#06210f';
+      d.style.background = '#f5c518'; d.style.color = '#06210f';
+    } else if (visited.has(f.properties.id)) {
+      d.style.background = '#2fb36b'; d.style.color = '#06210f';
     }
     box.append(d); rows.push({ f, k, a, el: d });
   });
@@ -984,9 +1040,7 @@ setInterval(() => { if ($('#list').style.display === 'block') upd(); updSelArrow
 function closeList() { if (openP === 'list') panel('list'); }
 $('#bL').onclick = () => panel('list');
 $('#q').oninput = render;
-$('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; selectedFeature = null; map.getSource('sel').setData(EMPTY); updSelArrow(); save(); render(); } };
 
-/* ---------- CAMBIO 2: bloquear orientación en vertical ---------- */
 (async () => {
   try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('portrait'); } catch (e) {}
 })();
