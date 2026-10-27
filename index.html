@@ -31,7 +31,6 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .dot{position:absolute;left:-10px;top:-10px;width:20px;height:20px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-sizing:border-box;box-shadow:0 0 8px #000a}
 .cone{position:absolute;left:-80px;top:-80px;width:160px;height:160px;border-radius:50%;background:conic-gradient(from -32deg,rgba(61,220,132,.65) 0deg 64deg,transparent 64deg);-webkit-mask:radial-gradient(circle,#000 6%,transparent 70%);mask:radial-gradient(circle,#000 6%,transparent 70%)}
 @keyframes pl{0%{transform:scale(1);opacity:.9}100%{transform:scale(4);opacity:0}}
-/* Recuadro de indicaciones bajado a media pantalla */
 #turn{left:8px;top:50%;transform:translateY(-50%);width:138px;border-radius:16px;padding:10px 12px}
 #ta{font-size:40px;line-height:1}
 #td{font:700 24px system-ui,sans-serif}
@@ -56,16 +55,14 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .maplibregl-popup-content{color:#17201b;border-radius:12px;max-width:250px;padding:14px 16px}
 .maplibregl-popup-close-button{font-size:32px;width:42px;height:42px;line-height:36px;color:#17201b}
 .maplibregl-popup-content .go{margin-top:8px;width:100%;border:0;border-radius:8px;padding:10px;font:600 14px system-ui}
-/* Indicador de dirección al recinto seleccionado */
 #selArrow{position:absolute;left:10px;top:calc(64px + env(safe-area-inset-top,0));z-index:6;width:52px;height:52px;display:none;background:var(--gl);border-radius:14px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-sizing:border-box;padding:6px}
 #selArrow svg{width:40px;height:40px;display:block;margin:0 auto}
 #selArrow.on{display:block;background:var(--ac)}
-/* Indicador de velocidad centrado */
+#selArrowPath{transform-box:fill-box;transform-origin:center;transition:transform .15s linear}
 #spd{position:absolute;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0));z-index:6;display:none;padding:6px 14px;border-radius:14px;background:var(--gl);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font:700 20px system-ui,sans-serif;box-sizing:border-box;white-space:nowrap;text-align:center;min-width:70px}
 #spd small{display:block;font:600 10px system-ui;opacity:.8;letter-spacing:.5px}
 #spd.on{display:block}
 #spd.hi{background:#ff4d3d;color:#fff}
-/* Diálogo de colores KMZ */
 #colorDlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;background:var(--gl);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:16px;padding:16px;display:none;width:min(90vw,360px);box-sizing:border-box}
 #colorDlg h3{margin:0 0 12px;font-size:16px}
 #colorDlg label{display:flex;align-items:center;justify-content:space-between;padding:8px 0;gap:10px}
@@ -88,9 +85,7 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <button class="b" id="bG">GPS</button><button class="b" id="bO">Opciones</button>
 </div>
 <div id="cmp"><svg viewBox="0 0 40 40"><path d="M20 2L29 22H11Z" fill="#ff4d3d"/><path d="M20 38L29 22H11Z" fill="#e8eeea"/><text x="20" y="19" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">N</text></svg><span id="cd">0°</span><b id="cm">MANUAL</b></div>
-<!-- Indicador de velocidad -->
 <div id="spd"><span id="spdVal">0</span><small>km/h</small></div>
-<!-- Flecha indicadora hacia el recinto seleccionado -->
 <div id="selArrow"><svg viewBox="0 0 40 40"><path id="selArrowPath" d="M20 4L32 32H8Z" fill="#2a7fff"/></svg></div>
 <div id="mode"></div>
 <div class="pn" id="lm"></div>
@@ -100,7 +95,6 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
 <div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"><button class="b" id="bX">Borrar todo</button></div><div id="items"></div></div>
 <div id="msg"></div>
-<!-- Diálogo de colores para KMZ -->
 <div id="colorDlg">
   <h3>Colores de importación</h3>
   <label>Puntos <input type="color" id="colPt" value="#e5392f"></label>
@@ -125,7 +119,6 @@ const BASES = [{ id: 'osm', n: 'Mapa', a: '© OpenStreetMap' }, { id: 'pnoa', n:
 const tileUrl = (id, z, x, y) => TPL[id].replace(/\{z\}/g, z).replace(/\{x\}/g, x).replace(/\{y\}/g, y);
 const USO = { AG: 'corrientes y superficies de agua', CA: 'viales', CF: 'asociación cítricos-frutales', CI: 'cítricos', CV: 'asociación cítricos-viñedo', ED: 'edificaciones', EP: 'elemento del paisaje', FL: 'frutos secos y olivar', FO: 'forestal', FS: 'frutos secos', FV: 'frutos secos y viñedo', FY: 'frutales', IM: 'improductivos', IV: 'invernaderos y cultivos bajo plástico', MT: 'matorral', OC: 'asociación olivar-cítricos', OV: 'olivar', PA: 'pasto con arbolado', PR: 'pasto arbustivo', PS: 'pastizal', TA: 'tierras arables', TH: 'huerta', VF: 'viñedo-frutal', VI: 'viñedo', VO: 'viñedo-olivar', ZU: 'zona urbana', ZV: 'zona censurada' };
 const GRUPO = { TCS: 'tierras de cultivo de secano', TCR: 'tierras de cultivo de regadío', CP: 'cultivos permanentes', PP: 'pastos permanentes' };
-// Si hay conexión, actualiza la lista de usos desde el servicio oficial (se guarda para usarla sin conexión)
 (async () => {
   try { Object.assign(USO, JSON.parse(LS.get('usoJson') || '{}')); } catch (e) {}
   try {
@@ -144,7 +137,7 @@ try { data = JSON.parse(LS.get('kmz-data')) || data; } catch (e) {}
 data.features.forEach((f, i) => f.properties.id = i);
 let is3d = false, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
-let selectedFeature = null, selArrowEl = null, gpsMode = 'general';
+let selectedFeature = null, gpsMode = 'general';
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
 
 const dist = (a, b) => Math.hypot((b[0] - a[0]) * R * Math.cos((a[1] + b[1]) / 2 * R), (b[1] - a[1]) * R) * 6371008;
@@ -176,7 +169,7 @@ function tap() {
 }
 document.addEventListener('click', e => { if (e.target.closest('button,.i,#cmp')) tap(); }, true);
 
-/* ---------- Caché de teselas (Cache API): persiste hasta borrar la caché ---------- */
+/* ---------- Caché de teselas ---------- */
 maplibregl.addProtocol('ctile', async (p, c) => {
   const [, id, z, x, y] = p.url.match(/^ctile:\/\/(\w+)\/(\d+)\/(\d+)\/(\d+)/), u = tileUrl(id, z, x, y);
   let ca = null; try { ca = window.caches && await caches.open(CACHE); } catch (e) {}
@@ -342,7 +335,7 @@ function popup(p, c, f) {
   const pop = new maplibregl.Popup({ maxWidth: '250px' }).setLngLat(c).setDOMContent(d).addTo(map);
 }
 
-/* ---------- Nombres de puntos visibles también en 3D ---------- */
+/* ---------- Nombres de puntos ---------- */
 function labels() {
   lbl.forEach(m => m.remove()); lbl = [];
   if (!opts.labels || !map.getLayer('kml-pts') || map.getZoom() < 14) return;
@@ -350,10 +343,7 @@ function labels() {
   for (const f of data.features) {
     if (f.geometry.type !== 'Point' || !b.contains(f.geometry.coordinates)) continue;
     const e = document.createElement('div'); e.className = 'lb'; e.textContent = f.properties.name;
-    const el = is3d && map.queryTerrainElevation ? map.queryTerrainElevation(f.geometry.coordinates) : undefined;
-    const marker = new maplibregl.Marker({ element: e, anchor: 'left', offset: [11, 0] }).setLngLat(f.geometry.coordinates);
-    if (el != null) marker.setLngLat([f.geometry.coordinates[0], f.geometry.coordinates[1]]);
-    lbl.push(marker.addTo(map));
+    lbl.push(new maplibregl.Marker({ element: e, anchor: 'left', offset: [11, 0] }).setLngLat(f.geometry.coordinates).addTo(map));
     if (++n >= 90) break;
   }
 }
@@ -384,16 +374,33 @@ function select(f, quiet) {
   updSelArrow(); updListSelection();
   return poly;
 }
+// Selecciona SIEMPRE (no toggle) — para uso desde la lista
+function selectForce(f, quiet) {
+  selF = f; selectedFeature = f;
+  const poly = recinto(f);
+  map.getSource('sel').setData({ type: 'FeatureCollection', features: poly && poly !== f ? [poly, f] : [f] });
+  if (!quiet) { const s = usoSay(f); if (s) speak(s); }
+  updSelArrow(); updListSelection();
+  return poly;
+}
+
+/* ---------- Flecha hacia el recinto seleccionado ---------- */
 function updSelArrow() {
   const el = $('#selArrow');
-  if (!selectedFeature || !me) { el.classList.remove('on'); return; }
+  if (!selectedFeature) { el.classList.remove('on'); return; }
   el.classList.add('on');
+  // Origen: posición GPS si existe, si no el centro del mapa
+  const origin = me || map.getCenter().toArray();
   const c = ptOf(selectedFeature);
-  const b = brg(me, c);
-  const rot = b - (cmode === 'N' ? 0 : map.getBearing());
-  $('#selArrowPath').style.transform = `rotate(${rot}deg)`;
-  $('#selArrowPath').style.transformOrigin = '20px 20px';
+  const b = brg(origin, c);
+  // La flecha se orienta en pantalla: si el mapa está girado, compensamos
+  const rot = b - map.getBearing();
+  const p = $('#selArrowPath');
+  p.style.transform = `rotate(${rot}deg)`;
+  p.style.transformBox = 'fill-box';
+  p.style.transformOrigin = 'center';
 }
+
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
     const f = el._feature;
@@ -411,8 +418,8 @@ async function warm(c, z, b) {
   try { await Promise.race([fetchTiles(keys, null, { stop: false }), new Promise(res => setTimeout(res, 250))]); } catch (e) {}
 }
 async function focusFeature(f, quiet) {
-  const poly = select(f, quiet);
-  if (!poly && selectedFeature === null) return;
+  // CAMBIO: seleccionar SIEMPRE (sin toggle), para que tocar en la lista no deseleccione
+  const poly = selectForce(f, quiet);
   if (is3d) { prev3d = true; set3d(false, true); }
   setFollow(false);
   let b = null, cam = { center: ptOf(f), zoom: 17.5 };
@@ -424,6 +431,7 @@ async function focusFeature(f, quiet) {
   const c = Array.isArray(cam.center) ? cam.center : [cam.center.lng, cam.center.lat];
   await warm(c, cam.zoom, b);
   map.easeTo({ center: c, zoom: cam.zoom, pitch: 0, bearing: 0, duration: 650, easing: easeOut });
+  updSelArrow();
 }
 
 /* ---------- Icono de posición ---------- */
@@ -484,9 +492,9 @@ function tick(t) {
   if (wid === null && !sim && cmode !== 'A') { raf = 0; return; }
   if (dev != null) devS = devS == null ? dev : ang(devS, dev, 1 - Math.exp(-dt * 6));
   if (sim) stepSim(dt);
-  // GIRO AUTOMÁTICO (sin follow): usa el sensor del móvil; si no hay sensor, usa el rumbo GPS
+  // GIRO AUTOMÁTICO (sin follow): sensor del móvil; si no hay, rumbo GPS; si no, rumbo del coche
   if (cmode === 'A' && !follow) {
-    const b = devS != null ? devS : (tgt ? tgt.hdg : null);
+    const b = devS != null ? devS : (tgt ? tgt.hdg : (car.on ? car.hdg : null));
     if (b != null) map.jumpTo({ bearing: b });
   }
   if (tgt) {
@@ -506,6 +514,7 @@ function tick(t) {
       map.jumpTo({ center: [car.lng, car.lat], zoom: camZ, pitch: camP, bearing: camB });
     }
   }
+  updSelArrow();
   map.triggerRepaint(); raf = requestAnimationFrame(tick);
 }
 function fix(lng, lat, h, sp) {
@@ -550,7 +559,7 @@ function sync() {
 function startGps() {
   if (wid !== null) return;
   if (!navigator.geolocation) return msg('Este navegador no tiene geolocalización');
-  if (cmode === 'A') startCompass();   // NUEVO: garantiza sensor de orientación activo en AUTO
+  if (cmode === 'A') startCompass();
   wid = navigator.geolocation.watchPosition(p => fix(p.coords.longitude, p.coords.latitude, p.coords.heading, p.coords.speed),
     err => { msg(err.code === 1 ? 'Ubicación denegada. Abre la app desde una dirección https o localhost y permite la ubicación al navegador.' : 'GPS: ' + err.message); wid = null; sync(); },
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
@@ -574,6 +583,33 @@ $('#bG').onclick = () => {
   }
   sync();
 };
+
+/* ---------- Brújula / orientación del móvil ---------- */
+function headingOf(a, b, g) {
+  const x = b * R, y = g * R, z = a * R, cY = Math.cos(y), cZ = Math.cos(z), sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
+  const vx = -cZ * sY - sZ * sX * cY, vy = -sZ * sY + cZ * sX * cY;
+  return Math.hypot(vx, vy) < 0.35 ? (360 - a) % 360 : (Math.atan2(vx, vy) / R + 360) % 360;
+}
+function startCompass() {
+  if (startCompass.on) return;
+  const h = e => {
+    let v;
+    if (e.webkitCompassHeading != null) v = e.webkitCompassHeading;
+    else if (e.alpha != null && (e.absolute || e.type === 'deviceorientationabsolute')) v = headingOf(e.alpha, e.beta || 0, e.gamma || 0);
+    if (v != null && !isNaN(v)) dev = v;
+  };
+  const go = () => {
+    if (startCompass.reg) return;
+    startCompass.reg = 1; startCompass.on = 1;
+    addEventListener('deviceorientationabsolute', h, true);
+    addEventListener('deviceorientation', h, true);
+    // Si en 1.5 s no llega ningún valor, el permiso se denegó o no hay sensor → permitir reintento
+    setTimeout(() => { if (dev == null) { startCompass.on = 0; startCompass.reg = 0; } }, 1500);
+  };
+  if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) {
+    DeviceOrientationEvent.requestPermission().then(r => { if (r === 'granted') go(); }).catch(() => {});
+  } else go();
+}
 
 /* ---------- Ruta ---------- */
 function turnTxt(s) {
@@ -658,7 +694,7 @@ function stepSim(dt) {
   fix(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, brg(a, b), 17);
 }
 
-/* ---------- 3D, capas y mapas offline ---------- */
+/* ---------- 3D ---------- */
 let tOff = 0;
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 function terrainOffWhenFlat() {
@@ -683,6 +719,7 @@ function set3d(on, noCam) {
 }
 $('#b3').onclick = () => { prev3d = false; set3d(!is3d); };
 
+/* ---------- Capas ---------- */
 function setBase(id) {
   sel = id; LS.set('base', id);
   BASES.forEach(b => map.setLayoutProperty('b-' + b.id, 'visibility', b.id === id ? 'visible' : 'none'));
@@ -753,7 +790,7 @@ function optMenu() {
 function optMenuClose() { if (openP === 'om') panel('om'); }
 $('#bO').onclick = () => panel('om');
 
-/* ---------- Diálogo de colores al importar KMZ ---------- */
+/* ---------- Diálogo de colores KMZ ---------- */
 let pendingFiles = null;
 function showColorDlg(files) {
   pendingFiles = files;
@@ -910,6 +947,6 @@ setInterval(() => { if ($('#list').style.display === 'block') upd(); updSelArrow
 function closeList() { if (openP === 'list') panel('list'); }
 $('#bL').onclick = () => panel('list');
 $('#q').oninput = render;
-$('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; selectedFeature = null; map.getSource('sel').setData(EMPTY); save(); render(); } };
+$('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; selectedFeature = null; map.getSource('sel').setData(EMPTY); updSelArrow(); save(); render(); } };
 </script>
 </body></html>
