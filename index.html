@@ -115,6 +115,15 @@ window.addEventListener('error', e => {
 });
 
 const $ = s => document.querySelector(s), R = Math.PI / 180;
+
+/* ---------- on(): asigna un handler solo si el elemento existe; si no, reporta ---------- */
+function on(sel, fn) {
+  const el = document.querySelector(sel);
+  if (!el) { msg('ERROR: no existe el elemento ' + sel); return null; }
+  el.onclick = fn;
+  return el;
+}
+
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 const LS = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
              set: (k, v) => { try { localStorage.setItem(k, v); return 1; } catch (e) { return 0; } } };
@@ -152,18 +161,13 @@ if (data && Array.isArray(data.features)) {
 }
 
 /* ============================================================
-   CORRECCIÓN DEL TDZ: todas las variables de estado globales
-   se declaran AQUÍ ARRIBA, antes de map.on('style.load', ...),
-   porque style.load puede dispararse antes de que el script
-   termine de ejecutarse (estilo en caché) y usa d3busy, tOff,
-   is3d, follow, opts, data, etc.
+   Variables globales (arriba para evitar TDZ en style.load)
    ============================================================ */
 let is3d = false, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
 let selectedFeature = null, gpsMode = 'general';
 let visited = new Set();
 try { const v = JSON.parse(LS.get('visited') || '[]'); v.forEach(i => visited.add(i)); } catch (e) {}
-// AQUÍ: tOff y d3busy movidos arriba para evitar TDZ en style.load -> set3d
 let tOff = 0, d3busy = false;
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
 
@@ -358,7 +362,7 @@ function setMode(m) {
   p.textContent = m === 'A' ? 'GIRO AUTOMÁTICO' : 'NORTE ARRIBA';
   updIcons(); msg('Brújula: ' + MODES[m][1]); buzz([15, 40, 15]);
 }
-$('#cmp').onclick = () => setMode({ M: 'N', N: 'A', A: 'M' }[cmode]);
+on('#cmp', () => setMode({ M: 'N', N: 'A', A: 'M' }[cmode]));
 
 function popup(p, c, f) {
   const d = document.createElement('div'), h = document.createElement('b');
@@ -604,6 +608,7 @@ function setFollow(on) {
 function sync() {
   const on = wid !== null || sim;
   const b = $('#bG');
+  if (!b) return;
   b.classList.toggle('on', !!on);
   b.textContent = !on ? 'GPS'
     : sim ? 'Simulación'
@@ -637,7 +642,7 @@ function showGeneral() {
   map.easeTo({ center: [-0.5, 39.4], zoom: 9, duration: 700 });
 }
 
-$('#bG').onclick = () => {
+on('#bG', () => {
   const gpsOn = wid !== null || sim;
   if (!gpsOn) {
     gpsMode = 'current';
@@ -669,7 +674,7 @@ $('#bG').onclick = () => {
   if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
   else msg('Esperando señal GPS…');
   sync();
-};
+});
 
 function headingOf(a, b, g) {
   const x = b * R, y = g * R, z = a * R, cY = Math.cos(y), cZ = Math.cos(z), sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
@@ -763,13 +768,13 @@ function closeNav() {
   map.getSource('route').setData(EMPTY); map.getSource('dest').setData(EMPTY); setFollow(false); sync();
 }
 const to3d = () => { if (prev3d) { prev3d = false; set3d(true); } };
-$('#nGo').onclick = () => { if (!route) return; to3d(); startGps(); setFollow(true); };
-$('#nX').onclick = closeNav;
-$('#nSim').onclick = () => {
+on('#nGo', () => { if (!route) return; to3d(); startGps(); setFollow(true); });
+on('#nX', closeNav);
+on('#nSim', () => {
   if (!route) return;
   if (wid !== null) { navigator.geolocation.clearWatch(wid); wid = null; }
   route.i = 0; route.ni = 1; sim = { d: 0, i: 0 }; tgt = null; to3d(); setFollow(true); loop();
-};
+});
 function stepSim(dt) {
   sim.d += 17 * dt;
   const { c, cum } = route;
@@ -779,7 +784,6 @@ function stepSim(dt) {
   fix(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, brg(a, b), 17);
 }
 
-/* tOff y d3busy ya se declaran arriba, junto al resto de estado global */
 function terrainOffWhenFlat() {
   cancelAnimationFrame(tOff); const t0 = performance.now();
   const chk = t => { if (is3d) { tOff = 0; return; } if (map.getPitch() < 1.5 || t - t0 > 2500) { try { map.setTerrain(null); } catch (e) {} tOff = 0; return; } tOff = requestAnimationFrame(chk); };
@@ -809,7 +813,7 @@ function set3d(on, noCam) {
   updSpeed();
   setTimeout(() => { d3busy = false; }, 250);
 }
-$('#b3').onclick = () => { prev3d = false; set3d(!is3d); };
+on('#b3', () => { prev3d = false; set3d(!is3d); });
 
 function setBase(id) {
   sel = id; LS.set('base', id);
@@ -834,7 +838,7 @@ function panel(id) {
     render(); startCompass(); if (wid === null && !sim) startGps();
   }
 }
-$('#bC').onclick = () => panel('lm');
+on('#bC', () => panel('lm'));
 
 $('#fP').onchange = async e => {
   for (const f of e.target.files) {
@@ -880,25 +884,25 @@ function optMenu() {
   const v = btn('Borrar marcas de visitados'); v.onclick = () => { visited.clear(); saveVisited(); if (map.getLayer('kml-visit')) map.setFilter('kml-visit', ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', []]]]); render(); msg('Marcas de visitados borradas'); optMenu(); }; m.append(v);
 }
 function optMenuClose() { if (openP === 'om') panel('om'); }
-$('#bO').onclick = () => panel('om');
+on('#bO', () => panel('om'));
 
 let pendingFiles = null;
 function showColorDlg(files) {
   pendingFiles = files;
   const c = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
-  $('#colPt').value = c.pt; $('#colLine').value = c.line; $('#colPoly').value = c.poly;
-  $('#colorDlg').style.display = 'block';
+  const p = $('#colPt'), l = $('#colLine'), y = $('#colPoly'), d = $('#colorDlg');
+  if (p) p.value = c.pt; if (l) l.value = c.line; if (y) y.value = c.poly; if (d) d.style.display = 'block';
 }
-$('#colOk').onclick = async () => {
+on('#colOk', async () => {
   opts.kmlColors = { pt: $('#colPt').value, line: $('#colLine').value, poly: $('#colPoly').value };
   LS.set('opts', JSON.stringify(opts));
   if (map.getLayer('kml-pts')) map.setPaintProperty('kml-pts', 'circle-color', opts.kmlColors.pt);
   if (map.getLayer('kml-line')) map.setPaintProperty('kml-line', 'line-color', opts.kmlColors.line);
   if (map.getLayer('kml-fill')) map.setPaintProperty('kml-fill', 'fill-color', opts.kmlColors.poly);
-  $('#colorDlg').style.display = 'none';
+  const d = $('#colorDlg'); if (d) d.style.display = 'none';
   if (pendingFiles) { await importKmzFiles(pendingFiles); pendingFiles = null; }
-};
-$('#colCancel').onclick = () => { $('#colorDlg').style.display = 'none'; pendingFiles = null; };
+});
+on('#colCancel', () => { const d = $('#colorDlg'); if (d) d.style.display = 'none'; pendingFiles = null; });
 
 async function readFile(f) {
   let txt;
@@ -949,7 +953,7 @@ function save() {
   labels();
   if (map.getLayer('kml-visit')) map.setFilter('kml-visit', ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]]);
 }
-$('#bK').onclick = () => $('#fK').click();
+on('#bK', () => $('#fK').click());
 $('#fK').onchange = async e => {
   const files = [...e.target.files];
   e.target.value = '';
@@ -1041,7 +1045,7 @@ function upd() {
 }
 setInterval(() => { if ($('#list').style.display === 'block') upd(); updSelArrow(); updSpeed(); }, 1000);
 function closeList() { if (openP === 'list') panel('list'); }
-$('#bL').onclick = () => panel('list');
+on('#bL', () => panel('list'));
 $('#q').oninput = render;
 
 if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('portrait').catch(() => {}); }
