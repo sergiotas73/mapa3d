@@ -109,7 +109,6 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
-/* ---------- Instrumentación de errores visible ---------- */
 window.addEventListener('error', e => {
   const m = document.getElementById('msg');
   if (m) { m.textContent = 'ERROR: ' + (e.message || 'desconocido') + (e.lineno ? ' (línea ' + e.lineno + ')' : ''); m.style.display = 'block'; }
@@ -189,7 +188,6 @@ function speak(t) {
 function saveVisited() { LS.set('visited', JSON.stringify([...visited])); }
 function safeName(f) { try { return String(f && f.properties && f.properties.name || '').toLowerCase(); } catch (e) { return ''; } }
 
-/* ---------- Vibración y sonido ---------- */
 function buzz(p) { if (opts.haptic && navigator.vibrate) try { navigator.vibrate(p); } catch (e) {} }
 function tap() {
   if (!opts.haptic) return; buzz(12);
@@ -201,7 +199,6 @@ function tap() {
 }
 document.addEventListener('click', e => { if (e.target.closest('button,.i,#cmp')) tap(); }, true);
 
-/* ---------- Caché de teselas ---------- */
 maplibregl.addProtocol('ctile', async (p, c) => {
   const [, id, z, x, y] = p.url.match(/^ctile:\/\/(\w+)\/(\d+)\/(\d+)\/(\d+)/), u = tileUrl(id, z, x, y);
   let ca = null; try { ca = window.caches && await caches.open(CACHE); } catch (e) {}
@@ -271,7 +268,6 @@ async function prefetchRoute() {
   } catch (e) {}
 }
 
-/* ---------- Mapa ---------- */
 const map = new maplibregl.Map({
   container: 'map', center: [-0.5, 39.4], zoom: 9, maxPitch: 85, maxZoom: 20, fadeDuration: 100, maxTileCacheSize: 150,
   pixelRatio: Math.min(window.devicePixelRatio || 1, 2.5),
@@ -411,6 +407,22 @@ const recinto = f => {
   if (f.geometry.type === 'Polygon') return f;
   return data.features.find(g => g && g.geometry && g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0])) || null;
 };
+
+/* ============================================================
+   CAMBIO: un punto hereda el estado "visitado" de su polígono
+   contenedor. Así, al marcar un recinto como visitado, todos
+   los puntos dentro de él también se muestran verdes en la lista.
+   ============================================================ */
+function isVisited(f) {
+  if (!f || !f.properties) return false;
+  if (visited.has(f.properties.id)) return true;
+  if (f.geometry && f.geometry.type === 'Point') {
+    const r = recinto(f);
+    return !!(r && r.properties && visited.has(r.properties.id));
+  }
+  return false;
+}
+
 const usoOf = f => { const p = (f && f.properties) || {}, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
 function usoSay(f) {
   const p = recinto(f), g = k => String((f.properties && f.properties[k]) || (p && p.properties && p.properties[k]) || '').trim();
@@ -458,22 +470,15 @@ function updSelArrow() {
   const rot = b - map.getBearing();
   const p = $('#selArrowPath'); if (p) p.style.transform = `rotate(${rot}deg)`;
 }
-
-/* ============================================================
-   CAMBIO: el estado "visitado" (verde) tiene PRIORIDAD sobre
-   el estado "seleccionado" (amarillo). Así, al marcar un recinto
-   como visitado, su fila se ve verde en la lista aunque esté
-   seleccionado en ese momento.
-   ============================================================ */
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
     const f = el._feature;
     if (!f || !f.properties) return;
-    const isVis = visited.has(f.properties.id);
+    const isVis = isVisited(f);
     const isSel = selectedFeature && selectedFeature.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type;
-    if (isVis) { el.style.background = '#2fb36b'; el.style.color = '#06210f'; }        // visitado → verde (prioridad)
-    else if (isSel) { el.style.background = '#f5c518'; el.style.color = '#06210f'; }   // seleccionado → amarillo
-    else { el.style.background = ''; el.style.color = ''; }                            // normal
+    if (isVis) { el.style.background = '#2fb36b'; el.style.color = '#06210f'; }
+    else if (isSel) { el.style.background = '#f5c518'; el.style.color = '#06210f'; }
+    else { el.style.background = ''; el.style.color = ''; }
   });
 }
 async function warm(c, z, b) {
@@ -1042,8 +1047,8 @@ function render() {
       l.append(s);
       d.append(l, k, a);
       d.onclick = () => { focusFeature(f); closeList(); };
-      // PRIORIDAD: visitado (verde) > seleccionado (amarillo) > normal
-      if (visited.has(f.properties.id)) {
+      // Visitado (por herencia del polígono contenedor) > seleccionado > normal
+      if (isVisited(f)) {
         d.style.background = '#2fb36b'; d.style.color = '#06210f';
       } else if (selectedFeature && selectedFeature.properties && f.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
         d.style.background = '#f5c518'; d.style.color = '#06210f';
