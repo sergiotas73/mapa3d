@@ -107,7 +107,7 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
-/* ---------- Instrumentación de errores visible ---------- */
+/* ---------- Instrumentación de errores visible (sin romper nada) ---------- */
 window.addEventListener('error', e => {
   const m = document.getElementById('msg');
   if (m) { m.textContent = 'ERROR: ' + (e.message || 'desconocido') + (e.lineno ? ' (línea ' + e.lineno + ')' : ''); m.style.display = 'block'; }
@@ -115,7 +115,7 @@ window.addEventListener('error', e => {
 });
 
 const $ = s => document.querySelector(s), R = Math.PI / 180;
-const easeOut = t => 1 - Math.pow(1 - t, 3);   // MOVIDO ARRIBA: antes estaba definido más abajo y focusFeature lo usaba antes de inicializarse
+const easeOut = t => 1 - Math.pow(1 - t, 3);
 const LS = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
              set: (k, v) => { try { localStorage.setItem(k, v); return 1; } catch (e) { return 0; } } };
 const EMPTY = { type: 'FeatureCollection', features: [] }, EXA = 1.5, CACHE = 'tiles-v1';
@@ -143,7 +143,14 @@ let opts = { labels: true, voice: true, haptic: true, bld: true, r: 600, z: 17, 
 try { Object.assign(opts, JSON.parse(LS.get('opts'))); } catch (e) {}
 let data = { type: 'FeatureCollection', features: [] };
 try { data = JSON.parse(LS.get('kmz-data')) || data; } catch (e) {}
-data.features.forEach((f, i) => f.properties.id = i);
+// BLINDAJE: asegura properties e id en cada feature, aunque venga mal
+if (data && Array.isArray(data.features)) {
+  data.features.forEach((f, i) => {
+    if (!f) return;
+    if (!f.properties) f.properties = {};
+    f.properties.id = i;
+  });
+}
 let is3d = false, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
 let selectedFeature = null, gpsMode = 'general';
@@ -168,6 +175,7 @@ function speak(t) {
   speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'es-ES'; speechSynthesis.speak(u);
 }
 function saveVisited() { LS.set('visited', JSON.stringify([...visited])); }
+function safeName(f) { try { return String(f && f.properties && f.properties.name || '').toLowerCase(); } catch (e) { return ''; } }
 
 /* ---------- Vibración y sonido ---------- */
 function buzz(p) { if (opts.haptic && navigator.vibrate) try { navigator.vibrate(p); } catch (e) {} }
@@ -272,39 +280,41 @@ function addDem(spec) {
 }
 
 map.on('style.load', () => {
-  map.addSource('kml', { type: 'geojson', data });
-  const kmlColors = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
-  map.addLayer({ id: 'kml-fill', type: 'fill', source: 'kml', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': kmlColors.poly, 'fill-opacity': 0.25 } });
-  map.addLayer({ id: 'kml-case', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#000', 'line-opacity': 0.7, 'line-width': 6 } });
-  map.addLayer({ id: 'kml-line', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': kmlColors.line, 'line-width': 3 } });
-  map.addLayer({ id: 'kml-pts', type: 'circle', source: 'kml', filter: ['==', ['geometry-type'], 'Point'],
-    paint: { 'circle-radius': 7, 'circle-color': kmlColors.pt, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-  map.addLayer({ id: 'kml-visit', type: 'fill', source: 'kml',
-    filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]],
-    paint: { 'fill-color': '#2fb36b', 'fill-opacity': 0.45 } }, 'kml-case');
-  map.addSource('sel', { type: 'geojson', data: EMPTY });
-  map.addLayer({ id: 'sel-line', type: 'line', source: 'sel', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#3ddc84', 'line-width': 4.5 } });
-  map.addLayer({ id: 'sel-pt', type: 'circle', source: 'sel', filter: ['==', ['geometry-type'], 'Point'],
-    paint: { 'circle-radius': 13, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#3ddc84', 'circle-stroke-width': 3.5 } });
-  addDem({ tiles: ['ctile://dem/{z}/{x}/{y}'] });
   try {
-    map.addSource('ofm', { type: 'vector', url: 'https://tiles.openfreemap.org/planet' });
-    map.addLayer({ id: 'bld', type: 'fill-extrusion', source: 'ofm', 'source-layer': 'building', minzoom: 14, paint: {
-      'fill-extrusion-color': '#d9d3c9', 'fill-extrusion-opacity': 0.9,
-      'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
-      'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0] } }, 'kml-fill');
-  } catch (e) {}
-  map.addSource('route', { type: 'geojson', data: EMPTY });
-  map.addSource('dest', { type: 'geojson', data: EMPTY });
-  map.addLayer({ id: 'route-case', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 11 } });
-  map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2a7fff', 'line-width': 6.5 } });
-  map.addLayer({ id: 'dest', type: 'circle', source: 'dest', paint: { 'circle-radius': 10, 'circle-color': '#3ddc84', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
-  try { map.addLayer(carLayer); } catch (e) { msg('Coche 3D no disponible: ' + e.message); }
-  mkDot.setLngLat([0, 0]).addTo(map); mkCone.setLngLat([0, 0]).addTo(map); updIcons();
-  try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#dfe9ee',
-    'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.4 }); } catch (e) {}
-  set3d(is3d, true); render();
-  if (data.features.length) fit(data.features);
+    map.addSource('kml', { type: 'geojson', data });
+    const kmlColors = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
+    map.addLayer({ id: 'kml-fill', type: 'fill', source: 'kml', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': kmlColors.poly, 'fill-opacity': 0.25 } });
+    map.addLayer({ id: 'kml-case', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#000', 'line-opacity': 0.7, 'line-width': 6 } });
+    map.addLayer({ id: 'kml-line', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': kmlColors.line, 'line-width': 3 } });
+    map.addLayer({ id: 'kml-pts', type: 'circle', source: 'kml', filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 7, 'circle-color': kmlColors.pt, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    map.addLayer({ id: 'kml-visit', type: 'fill', source: 'kml',
+      filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', [...visited]]]],
+      paint: { 'fill-color': '#2fb36b', 'fill-opacity': 0.45 } }, 'kml-case');
+    map.addSource('sel', { type: 'geojson', data: EMPTY });
+    map.addLayer({ id: 'sel-line', type: 'line', source: 'sel', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#3ddc84', 'line-width': 4.5 } });
+    map.addLayer({ id: 'sel-pt', type: 'circle', source: 'sel', filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 13, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#3ddc84', 'circle-stroke-width': 3.5 } });
+    addDem({ tiles: ['ctile://dem/{z}/{x}/{y}'] });
+    try {
+      map.addSource('ofm', { type: 'vector', url: 'https://tiles.openfreemap.org/planet' });
+      map.addLayer({ id: 'bld', type: 'fill-extrusion', source: 'ofm', 'source-layer': 'building', minzoom: 14, paint: {
+        'fill-extrusion-color': '#d9d3c9', 'fill-extrusion-opacity': 0.9,
+        'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
+        'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0] } }, 'kml-fill');
+    } catch (e) {}
+    map.addSource('route', { type: 'geojson', data: EMPTY });
+    map.addSource('dest', { type: 'geojson', data: EMPTY });
+    map.addLayer({ id: 'route-case', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 11 } });
+    map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2a7fff', 'line-width': 6.5 } });
+    map.addLayer({ id: 'dest', type: 'circle', source: 'dest', paint: { 'circle-radius': 10, 'circle-color': '#3ddc84', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
+    try { map.addLayer(carLayer); } catch (e) { msg('Coche 3D no disponible: ' + e.message); }
+    mkDot.setLngLat([0, 0]).addTo(map); mkCone.setLngLat([0, 0]).addTo(map); updIcons();
+    try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#dfe9ee',
+      'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.4 }); } catch (e) {}
+    set3d(is3d, true); render();
+    if (data.features.length) fit(data.features);
+  } catch (e) { msg('style.load: ' + e.message); }
 });
 
 map.on('click', e => {
@@ -351,12 +361,13 @@ function popup(p, c, f) {
     const target = f.geometry.type === 'Polygon' ? f : recinto(f);
     const v = document.createElement('button');
     const markVisited = () => {
-      const isVis = visited.has(target.properties.id);
+      const isVis = target && target.properties && visited.has(target.properties.id);
       v.textContent = isVis ? 'Visitado ✓' : 'Visitado';
       v.className = 'visit' + (isVis ? ' done' : '');
     };
     markVisited();
     v.onclick = () => {
+      if (!target || !target.properties) return;
       if (visited.has(target.properties.id)) visited.delete(target.properties.id); else visited.add(target.properties.id);
       saveVisited();
       markVisited();
@@ -375,18 +386,22 @@ function labels() {
   if (!opts.labels || !map.getLayer('kml-pts') || map.getZoom() < 14) return;
   const b = map.getBounds(); let n = 0;
   for (const f of data.features) {
-    if (f.geometry.type !== 'Point' || !b.contains(f.geometry.coordinates)) continue;
-    const e = document.createElement('div'); e.className = 'lb'; e.textContent = f.properties.name;
+    if (!f || !f.geometry || f.geometry.type !== 'Point' || !b.contains(f.geometry.coordinates)) continue;
+    const e = document.createElement('div'); e.className = 'lb'; e.textContent = (f.properties && f.properties.name) || '';
     lbl.push(new maplibregl.Marker({ element: e, anchor: 'left', offset: [11, 0] }).setLngLat(f.geometry.coordinates).addTo(map));
     if (++n >= 90) break;
   }
 }
 map.on('terrain', () => { if (opts.labels) setTimeout(labels, 300); });
 
-const recinto = f => f.geometry.type === 'Polygon' ? f : data.features.find(g => g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0]));
-const usoOf = f => { const p = f.properties, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
+const recinto = f => {
+  if (!f || !f.geometry) return null;
+  if (f.geometry.type === 'Polygon') return f;
+  return data.features.find(g => g && g.geometry && g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0])) || null;
+};
+const usoOf = f => { const p = (f && f.properties) || {}, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
 function usoSay(f) {
-  const p = recinto(f), g = k => String(f.properties[k] || (p && p.properties[k]) || '').trim();
+  const p = recinto(f), g = k => String((f.properties && f.properties[k]) || (p && p.properties && p.properties[k]) || '').trim();
   const u = usoOf(f) || (p ? usoOf(p) : ''), gr = g('grupo'), pe = g('pend');
   let s = '';
   if (u) s += 'Uso SIGPAC: ' + (USO[u.toUpperCase()] || u) + '. ';
@@ -433,8 +448,8 @@ function updSelArrow() {
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
     const f = el._feature;
-    if (!f) return;
-    const isSel = selectedFeature && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type;
+    if (!f || !f.properties) return;
+    const isSel = selectedFeature && selectedFeature.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type;
     const isVis = visited.has(f.properties.id);
     if (isSel) { el.style.background = '#f5c518'; el.style.color = '#06210f'; }
     else if (isVis) { el.style.background = '#2fb36b'; el.style.color = '#06210f'; }
@@ -607,7 +622,7 @@ function startGps() {
 function showGeneral() {
   if (data.features.length) {
     const b = new maplibregl.LngLatBounds();
-    data.features.forEach(f => flat(f.geometry.coordinates).forEach(c => b.extend(c)));
+    data.features.forEach(f => { if (f && f.geometry) flat(f.geometry.coordinates).forEach(c => b.extend(c)); });
     if (!b.isEmpty()) { map.fitBounds(b, { padding: 60, maxZoom: 16, duration: 700 }); return; }
   }
   map.easeTo({ center: [-0.5, 39.4], zoom: 9, duration: 700 });
@@ -629,7 +644,7 @@ $('#bG').onclick = () => {
       gpsMode = 'selected';
       setFollow(false);
       focusFeature(selectedFeature, true);
-      msg('Recinto: ' + selectedFeature.properties.name);
+      msg('Recinto: ' + (selectedFeature.properties && selectedFeature.properties.name || ''));
     } else {
       gpsMode = 'general';
       stopGps();
@@ -915,11 +930,11 @@ function parseKML(t, src) {
   return out;
 }
 function fit(fs) {
-  const b = new maplibregl.LngLatBounds(); fs.forEach(f => flat(f.geometry.coordinates).forEach(c => b.extend(c)));
+  const b = new maplibregl.LngLatBounds(); fs.forEach(f => { if (f && f.geometry) flat(f.geometry.coordinates).forEach(c => b.extend(c)); });
   if (!b.isEmpty()) map.fitBounds(b, { padding: 80, maxZoom: 17, duration: 900 });
 }
 function save() {
-  data.features.forEach((f, i) => f.properties.id = i);
+  data.features.forEach((f, i) => { if (f) { if (!f.properties) f.properties = {}; f.properties.id = i; } });
   const s = map.getSource('kml'); if (s) s.setData(data);
   if (!LS.set('kmz-data', JSON.stringify(data))) msg('No se pudo guardar en el dispositivo (demasiados datos)');
   labels();
@@ -946,9 +961,9 @@ async function importKmzFiles(files) {
 }
 
 function superficieOf(f) {
-  const p = f.properties;
+  const p = (f && f.properties) || {};
   if (p.sup) return p.sup;
-  if (f.geometry.type === 'Polygon') {
+  if (f && f.geometry && f.geometry.type === 'Polygon') {
     const ring = f.geometry.coordinates[0];
     let area = 0;
     for (let i = 0; i < ring.length - 1; i++) {
@@ -961,7 +976,7 @@ function superficieOf(f) {
   return '';
 }
 function regadioOf(f) {
-  const p = f.properties, g = String(p.grupo || '').toUpperCase(), desc = String(p.desc || '').toLowerCase();
+  const p = (f && f.properties) || {}, g = String(p.grupo || '').toUpperCase(), desc = String(p.desc || '').toLowerCase();
   if (g === 'TCR' || g === 'CP' && /regad/i.test(desc)) return 'Regadío';
   if (g === 'TCS') return 'Secano';
   if (/secano/i.test(desc)) return 'Secano';
@@ -972,44 +987,48 @@ function regadioOf(f) {
   return '';
 }
 function render() {
-  const q = $('#q').value.toLowerCase(), box = $('#items'); box.textContent = ''; rows = [];
-  let fs = data.features;
-  if (opts.listOnlyPts) fs = fs.filter(f => f.geometry.type === 'Point');
-  fs = fs.filter(f => f.properties.name.toLowerCase().includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
-  if (me) fs.sort((a, b) => a.d - b.d);
-  listSorted = !!me;
-  fs.slice(0, 300).forEach(({ f }) => {
-    const d = document.createElement('div'), l = document.createElement('div'), s = document.createElement('small'), k = document.createElement('div'), a = document.createElement('div');
-    d.className = 'i'; l.className = 'l'; k.className = 'k'; a.className = 'a';
-    d._feature = f;
-    l.textContent = f.properties.name;
-    const sup = superficieOf(f), pend = f.properties.pend || '', reg = regadioOf(f);
-    let info = f.geometry.type;
-    if (f.properties.uso) info += ' · uso ' + f.properties.uso;
-    if (sup) info += ' · ' + sup;
-    if (pend) info += ' · pend. ' + String(pend).replace('.', ',') + '%';
-    if (reg) info += ' · ' + reg;
-    s.textContent = info;
-    l.append(s);
-    d.append(l, k, a);
-    d.onclick = () => { focusFeature(f); closeList(); };
-    if (selectedFeature && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
-      d.style.background = '#f5c518'; d.style.color = '#06210f';
-    } else if (visited.has(f.properties.id)) {
-      d.style.background = '#2fb36b'; d.style.color = '#06210f';
-    }
-    box.append(d); rows.push({ f, k, a, el: d });
-  });
-  if (!rows.length) { const d = document.createElement('div'); d.className = 'i'; d.textContent = 'Sin puntos. Pulsa KMZ para importar.'; box.append(d); }
-  upd();
+  try {
+    const q = ($('#q').value || '').toLowerCase(), box = $('#items'); box.textContent = ''; rows = [];
+    let fs = data.features || [];
+    if (opts.listOnlyPts) fs = fs.filter(f => f && f.geometry && f.geometry.type === 'Point');
+    fs = fs.filter(f => safeName(f).includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
+    if (me) fs.sort((a, b) => a.d - b.d);
+    listSorted = !!me;
+    fs.slice(0, 300).forEach(({ f }) => {
+      const d = document.createElement('div'), l = document.createElement('div'), s = document.createElement('small'), k = document.createElement('div'), a = document.createElement('div');
+      d.className = 'i'; l.className = 'l'; k.className = 'k'; a.className = 'a';
+      d._feature = f;
+      l.textContent = (f.properties && f.properties.name) || '(sin nombre)';
+      const sup = superficieOf(f), pend = (f.properties && f.properties.pend) || '', reg = regadioOf(f);
+      let info = f.geometry.type;
+      if (f.properties && f.properties.uso) info += ' · uso ' + f.properties.uso;
+      if (sup) info += ' · ' + sup;
+      if (pend) info += ' · pend. ' + String(pend).replace('.', ',') + '%';
+      if (reg) info += ' · ' + reg;
+      s.textContent = info;
+      l.append(s);
+      d.append(l, k, a);
+      d.onclick = () => { focusFeature(f); closeList(); };
+      if (selectedFeature && selectedFeature.properties && f.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
+        d.style.background = '#f5c518'; d.style.color = '#06210f';
+      } else if (visited.has(f.properties.id)) {
+        d.style.background = '#2fb36b'; d.style.color = '#06210f';
+      }
+      box.append(d); rows.push({ f, k, a, el: d });
+    });
+    if (!rows.length) { const d = document.createElement('div'); d.className = 'i'; d.textContent = 'Sin puntos. Pulsa KMZ para importar.'; box.append(d); }
+    upd();
+  } catch (e) { msg('render: ' + e.message); }
 }
 function upd() {
-  rows.forEach(r => {
-    if (!me) { r.k.textContent = '—'; r.a.textContent = ''; return; }
-    const c = ptOf(r.f), b = brg(me, c), ref = dev != null ? dev : speed > 1 ? car.hdg : 0;
-    r.k.textContent = (dist(me, c) / 1000).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' km';
-    r.a.innerHTML = `<span style="display:inline-block;transform:rotate(${(b - ref).toFixed(0)}deg)">↑</span> ${Math.round(b)}° ${card(b)}`;
-  });
+  try {
+    rows.forEach(r => {
+      if (!me) { r.k.textContent = '—'; r.a.textContent = ''; return; }
+      const c = ptOf(r.f), b = brg(me, c), ref = dev != null ? dev : speed > 1 ? car.hdg : 0;
+      r.k.textContent = (dist(me, c) / 1000).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' km';
+      r.a.innerHTML = `<span style="display:inline-block;transform:rotate(${(b - ref).toFixed(0)}deg)">↑</span> ${Math.round(b)}° ${card(b)}`;
+    });
+  } catch (e) { msg('upd: ' + e.message); }
 }
 setInterval(() => { if ($('#list').style.display === 'block') upd(); updSelArrow(); updSpeed(); }, 1000);
 function closeList() { if (openP === 'list') panel('list'); }
