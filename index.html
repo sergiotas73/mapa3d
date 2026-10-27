@@ -31,7 +31,7 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .dot{position:absolute;left:-10px;top:-10px;width:20px;height:20px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-sizing:border-box;box-shadow:0 0 8px #000a}
 .cone{position:absolute;left:-80px;top:-80px;width:160px;height:160px;border-radius:50%;background:conic-gradient(from -32deg,rgba(61,220,132,.65) 0deg 64deg,transparent 64deg);-webkit-mask:radial-gradient(circle,#000 6%,transparent 70%);mask:radial-gradient(circle,#000 6%,transparent 70%)}
 @keyframes pl{0%{transform:scale(1);opacity:.9}100%{transform:scale(4);opacity:0}}
-/* CAMBIO: recuadro de indicaciones bajado a media pantalla */
+/* Recuadro de indicaciones bajado a media pantalla */
 #turn{left:8px;top:50%;transform:translateY(-50%);width:138px;border-radius:16px;padding:10px 12px}
 #ta{font-size:40px;line-height:1}
 #td{font:700 24px system-ui,sans-serif}
@@ -56,16 +56,16 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .maplibregl-popup-content{color:#17201b;border-radius:12px;max-width:250px;padding:14px 16px}
 .maplibregl-popup-close-button{font-size:32px;width:42px;height:42px;line-height:36px;color:#17201b}
 .maplibregl-popup-content .go{margin-top:8px;width:100%;border:0;border-radius:8px;padding:10px;font:600 14px system-ui}
-/* NUEVO: indicador de dirección al recinto seleccionado */
+/* Indicador de dirección al recinto seleccionado */
 #selArrow{position:absolute;left:10px;top:calc(64px + env(safe-area-inset-top,0));z-index:6;width:52px;height:52px;display:none;background:var(--gl);border-radius:14px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-sizing:border-box;padding:6px}
 #selArrow svg{width:40px;height:40px;display:block;margin:0 auto}
 #selArrow.on{display:block;background:var(--ac)}
-/* NUEVO: indicador de velocidad centrado, misma altura que brújula y flecha */
+/* Indicador de velocidad centrado */
 #spd{position:absolute;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0));z-index:6;display:none;padding:6px 14px;border-radius:14px;background:var(--gl);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font:700 20px system-ui,sans-serif;box-sizing:border-box;white-space:nowrap;text-align:center;min-width:70px}
 #spd small{display:block;font:600 10px system-ui;opacity:.8;letter-spacing:.5px}
 #spd.on{display:block}
 #spd.hi{background:#ff4d3d;color:#fff}
-/* NUEVO: diálogo de colores KMZ */
+/* Diálogo de colores KMZ */
 #colorDlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;background:var(--gl);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:16px;padding:16px;display:none;width:min(90vw,360px);box-sizing:border-box}
 #colorDlg h3{margin:0 0 12px;font-size:16px}
 #colorDlg label{display:flex;align-items:center;justify-content:space-between;padding:8px 0;gap:10px}
@@ -88,9 +88,9 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <button class="b" id="bG">GPS</button><button class="b" id="bO">Opciones</button>
 </div>
 <div id="cmp"><svg viewBox="0 0 40 40"><path d="M20 2L29 22H11Z" fill="#ff4d3d"/><path d="M20 38L29 22H11Z" fill="#e8eeea"/><text x="20" y="19" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">N</text></svg><span id="cd">0°</span><b id="cm">MANUAL</b></div>
-<!-- NUEVO: indicador de velocidad -->
+<!-- Indicador de velocidad -->
 <div id="spd"><span id="spdVal">0</span><small>km/h</small></div>
-<!-- NUEVO: flecha indicadora hacia el recinto seleccionado -->
+<!-- Flecha indicadora hacia el recinto seleccionado -->
 <div id="selArrow"><svg viewBox="0 0 40 40"><path id="selArrowPath" d="M20 4L32 32H8Z" fill="#2a7fff"/></svg></div>
 <div id="mode"></div>
 <div class="pn" id="lm"></div>
@@ -100,7 +100,7 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
 <div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"><button class="b" id="bX">Borrar todo</button></div><div id="items"></div></div>
 <div id="msg"></div>
-<!-- NUEVO: diálogo de colores para KMZ -->
+<!-- Diálogo de colores para KMZ -->
 <div id="colorDlg">
   <h3>Colores de importación</h3>
   <label>Puntos <input type="color" id="colPt" value="#e5392f"></label>
@@ -484,7 +484,11 @@ function tick(t) {
   if (wid === null && !sim && cmode !== 'A') { raf = 0; return; }
   if (dev != null) devS = devS == null ? dev : ang(devS, dev, 1 - Math.exp(-dt * 6));
   if (sim) stepSim(dt);
-  if (cmode === 'A' && !follow && devS != null) map.jumpTo({ bearing: devS });
+  // GIRO AUTOMÁTICO (sin follow): usa el sensor del móvil; si no hay sensor, usa el rumbo GPS
+  if (cmode === 'A' && !follow) {
+    const b = devS != null ? devS : (tgt ? tgt.hdg : null);
+    if (b != null) map.jumpTo({ bearing: b });
+  }
   if (tgt) {
     const age = Math.min((performance.now() - fixT) / 1000, 2.5), d = speed > 0.5 ? speed * age : 0, hr = tgt.hdg * R;
     const pl = tgt.lng + d * Math.sin(hr) / (111320 * Math.cos(tgt.lat * R)), pa = tgt.lat + d * Math.cos(hr) / 110540;
@@ -516,14 +520,13 @@ function fix(lng, lat, h, sp) {
   updSelArrow(); updSpeed();
 }
 
-/* ---------- NUEVO: indicador de velocidad ---------- */
+/* ---------- Indicador de velocidad ---------- */
 function updSpeed() {
   const el = $('#spd'), v = $('#spdVal');
   const kmh = Math.round((speed || 0) * 3.6);
-  // Solo en modo conducción (siguiendo activo) y superando 20 km/h
   const show = follow && kmh > 20;
   el.classList.toggle('on', show);
-  el.classList.toggle('hi', kmh > 120);   // rojo si se supera 120 km/h
+  el.classList.toggle('hi', kmh > 120);
   if (show) v.textContent = kmh;
 }
 
@@ -547,6 +550,7 @@ function sync() {
 function startGps() {
   if (wid !== null) return;
   if (!navigator.geolocation) return msg('Este navegador no tiene geolocalización');
+  if (cmode === 'A') startCompass();   // NUEVO: garantiza sensor de orientación activo en AUTO
   wid = navigator.geolocation.watchPosition(p => fix(p.coords.longitude, p.coords.latitude, p.coords.heading, p.coords.speed),
     err => { msg(err.code === 1 ? 'Ubicación denegada. Abre la app desde una dirección https o localhost y permite la ubicación al navegador.' : 'GPS: ' + err.message); wid = null; sync(); },
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
