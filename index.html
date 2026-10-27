@@ -2,7 +2,7 @@
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101614">
-<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Mapa%203D%22%2C%22short_name%22%3A%22Mapa3D%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23101614%22%2C%22theme_color%22%3A%22%23101614%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2522http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2522%2520viewBox%253D%25220%25200%252040%252040%2522%253E%253Crect%2520width%253D%252240%2522%2520height%253D%252240%2522%2520fill%253D%2522%2523101614%2522%252F%253E%253Cpath%2520d%253D%2522M20%25205L30%252022H10Z%2522%2520fill%253D%2522%25233ddc84%2522%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Mapa%203D%22%2C%22short_name%22%3A%22Mapa3D%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22orientation%22%3A%22portrait%22%2C%22background_color%22%3A%22%23101614%22%2C%22theme_color%22%3A%22%23101614%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2522http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2522%2520viewBox%253D%25220%25200%252040%252040%2522%253E%253Crect%2520width%253D%252240%2522%2520height%253D%252240%2522%2520fill%253D%2522%2523101614%2522%252F%253E%253Cpath%2520d%253D%2522M20%25205L30%252022H10Z%2522%2520fill%253D%2522%25233ddc84%2522%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
 <title>Mapa 3D</title>
 <link rel="stylesheet" href="maplibre-gl.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
@@ -31,10 +31,19 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .dot{position:absolute;left:-10px;top:-10px;width:20px;height:20px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-sizing:border-box;box-shadow:0 0 8px #000a}
 .cone{position:absolute;left:-80px;top:-80px;width:160px;height:160px;border-radius:50%;background:conic-gradient(from -32deg,rgba(61,220,132,.65) 0deg 64deg,transparent 64deg);-webkit-mask:radial-gradient(circle,#000 6%,transparent 70%);mask:radial-gradient(circle,#000 6%,transparent 70%)}
 @keyframes pl{0%{transform:scale(1);opacity:.9}100%{transform:scale(4);opacity:0}}
-#turn{left:8px;top:50%;transform:translateY(-50%);width:138px;border-radius:16px;padding:10px 12px}
-#ta{font-size:40px;line-height:1}
-#td{font:700 24px system-ui,sans-serif}
+/* CAMBIO 1: cuadro de direcciones arriba en el centro; la velocidad va dentro */
+#turn{left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0));width:min(92vw,360px);border-radius:16px;padding:10px 14px;display:none;flex-direction:row;align-items:center;gap:12px}
+#turn.show{display:flex}
+#ta{font-size:40px;line-height:1;flex:0 0 auto}
+#td{font:700 22px system-ui,sans-serif}
 #tt{font-size:13px;opacity:.9;margin-top:2px}
+/* velocidad dentro del cuadro de direcciones */
+#turn .spdbox{margin-left:auto;flex:0 0 auto;text-align:center;padding:4px 10px;border-radius:12px;background:#ffffff1c;min-width:66px}
+#turn .spdbox small{display:block;font:600 9px system-ui;opacity:.8;letter-spacing:.5px}
+#turn .spdbox b{display:block;font:700 22px system-ui;line-height:1}
+#turn .spdbox.hi{background:#ff4d3d;color:#fff}
+/* El indicador de velocidad flotante ya no se usa (queda por compatibilidad oculto) */
+#spd{display:none!important}
 #nav{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0));padding:12px 16px;border-radius:20px}
 #eta{font:700 24px system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #eta i{opacity:.5;font-style:normal}
@@ -59,10 +68,6 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 #selArrow svg{width:40px;height:40px;display:block;margin:0 auto}
 #selArrow.on{display:block;background:var(--ac)}
 #selArrowPath{transform-box:fill-box;transform-origin:center;transition:transform .15s linear}
-#spd{position:absolute;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0));z-index:6;display:none;padding:6px 14px;border-radius:14px;background:var(--gl);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font:700 20px system-ui,sans-serif;box-sizing:border-box;white-space:nowrap;text-align:center;min-width:70px}
-#spd small{display:block;font:600 10px system-ui;opacity:.8;letter-spacing:.5px}
-#spd.on{display:block}
-#spd.hi{background:#ff4d3d;color:#fff}
 #colorDlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;background:var(--gl);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:16px;padding:16px;display:none;width:min(90vw,360px);box-sizing:border-box}
 #colorDlg h3{margin:0 0 12px;font-size:16px}
 #colorDlg label{display:flex;align-items:center;justify-content:space-between;padding:8px 0;gap:10px}
@@ -85,12 +90,12 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <button class="b" id="bG">GPS</button><button class="b" id="bO">Opciones</button>
 </div>
 <div id="cmp"><svg viewBox="0 0 40 40"><path d="M20 2L29 22H11Z" fill="#ff4d3d"/><path d="M20 38L29 22H11Z" fill="#e8eeea"/><text x="20" y="19" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">N</text></svg><span id="cd">0°</span><b id="cm">MANUAL</b></div>
-<div id="spd"><span id="spdVal">0</span><small>km/h</small></div>
 <div id="selArrow"><svg viewBox="0 0 40 40"><path id="selArrowPath" d="M20 4L32 32H8Z" fill="#2a7fff"/></svg></div>
 <div id="mode"></div>
 <div class="pn" id="lm"></div>
 <div class="pn" id="om"></div>
-<div class="pn" id="turn"><div id="ta">↑</div><div id="td"></div><div id="tt"></div></div>
+<!-- CAMBIO 1: cuadro de direcciones con la velocidad integrada -->
+<div class="pn" id="turn"><div id="ta">↑</div><div><div id="td"></div><div id="tt"></div></div><div class="spdbox" id="turnSpd"><b id="turnSpdVal">0</b><small>km/h</small></div></div>
 <div class="pn" id="nav"><div id="eta"></div><div id="sub"></div>
   <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
 <div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"><button class="b" id="bX">Borrar todo</button></div><div id="items"></div></div>
@@ -476,9 +481,6 @@ const carLayer = {
 };
 
 /* ---------- Animación ---------- */
-/* CORREGIDO: loop() cancela siempre cualquier RAF pendiente antes de crear uno nuevo.
-   Así, si stopGps() mata el loop (raf=0 al ejecutarse el tick), startGps() lo reactiva
-   de forma fiable, aunque haya un tick en cola que intentaría matarlo. */
 function loop() {
   if (raf) { try { cancelAnimationFrame(raf); } catch (e) {} raf = 0; }
   last = performance.now();
@@ -525,14 +527,14 @@ function fix(lng, lat, h, sp) {
   updSelArrow(); updSpeed();
 }
 
-/* ---------- Indicador de velocidad ---------- */
+/* ---------- CAMBIO 1: indicador de velocidad dentro del cuadro de direcciones ---------- */
 function updSpeed() {
-  const el = $('#spd'), v = $('#spdVal');
+  const el = $('#turnSpd'), v = $('#turnSpdVal');
+  if (!el || !v) return;
   const kmh = Math.round((speed || 0) * 3.6);
-  const show = follow && kmh > 20;
-  el.classList.toggle('on', show);
+  // Se muestra siempre que haya GPS activo y el cuadro de direcciones visible
+  v.textContent = kmh;
   el.classList.toggle('hi', kmh > 120);
-  if (show) v.textContent = kmh;
 }
 
 /* ---------- Seguimiento y GPS ---------- */
@@ -574,7 +576,7 @@ function startGps() {
   loop();
 }
 
-/* ---------- Vista "mapa general": encuadra todos los puntos importados ---------- */
+/* ---------- Vista "mapa general" ---------- */
 function showGeneral() {
   if (data.features.length) {
     const b = new maplibregl.LngLatBounds();
@@ -584,16 +586,10 @@ function showGeneral() {
   map.easeTo({ center: [-0.5, 39.4], zoom: 9, duration: 700 });
 }
 
-/* ---------- Botón GPS: ciclo robusto ----------
-   - GPS apagado → posición actual
-   - En current: si hay recinto → recinto; si no → mapa general
-   - En selected o general → posición actual
-*/
+/* ---------- Botón GPS ---------- */
 $('#bG').onclick = () => {
   const gpsOn = wid !== null || sim;
-
   if (!gpsOn) {
-    // Encender y posicionar
     gpsMode = 'current';
     startGps();
     setFollow(true);
@@ -602,16 +598,13 @@ $('#bG').onclick = () => {
     sync();
     return;
   }
-
   if (gpsMode === 'current') {
     if (selectedFeature) {
-      // Posición → Recinto
       gpsMode = 'selected';
       setFollow(false);
       focusFeature(selectedFeature, true);
       msg('Recinto: ' + selectedFeature.properties.name);
     } else {
-      // Posición → Mapa general
       gpsMode = 'general';
       stopGps();
       showGeneral();
@@ -620,8 +613,6 @@ $('#bG').onclick = () => {
     sync();
     return;
   }
-
-  // selected o general → Posición
   gpsMode = 'current';
   if (wid === null) startGps();
   setFollow(true);
@@ -698,12 +689,13 @@ function showNav(rem, sec) {
 }
 function turns() {
   const T = $('#turn'), st = route.steps;
-  if (!st || st.length < 2 || !me) { T.style.display = 'none'; return; }
+  if (!st || st.length < 2 || !me) { T.classList.remove('show'); return; }
   let s = st[route.ni], d = dist(me, s.loc);
   while (d < 30 && route.ni < st.length - 1) { route.ni++; route.said = 0; s = st[route.ni]; d = dist(me, s.loc); }
-  T.style.display = 'block';
+  T.classList.add('show');
   $('#ta').textContent = ARW[s.type === 'arrive' ? 'arrive' : (s.type === 'roundabout' || s.type === 'rotary') ? 'rot' : s.mod] || '↑';
   $('#td').textContent = fmtD(d); $('#tt').textContent = turnTxt(s);
+  updSpeed();
   if (!follow) return;
   if (d < 350 && route.said < 1) { route.said = 1; speak('En ' + Math.round(d / 10) * 10 + ' metros, ' + turnTxt(s).toLowerCase()); }
   else if (d < 70 && route.said < 2) { route.said = 2; speak(turnTxt(s)); buzz([50, 40, 50]); }
@@ -719,7 +711,7 @@ function progress() {
   if (bd > 150 && !sim && Date.now() - route.t > 20000) { route.t = Date.now(); speak('Recalculando ruta'); routeTo(route.d, true, route.f); }
 }
 function closeNav() {
-  route = null; sim = null; $('#nav').style.display = 'none'; $('#turn').style.display = 'none';
+  route = null; sim = null; $('#nav').style.display = 'none'; $('#turn').classList.remove('show');
   map.getSource('route').setData(EMPTY); map.getSource('dest').setData(EMPTY); setFollow(false); sync();
 }
 const to3d = () => { if (prev3d) { prev3d = false; set3d(true); } };
@@ -993,5 +985,10 @@ function closeList() { if (openP === 'list') panel('list'); }
 $('#bL').onclick = () => panel('list');
 $('#q').oninput = render;
 $('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; selectedFeature = null; map.getSource('sel').setData(EMPTY); updSelArrow(); save(); render(); } };
+
+/* ---------- CAMBIO 2: bloquear orientación en vertical ---------- */
+(async () => {
+  try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('portrait'); } catch (e) {}
+})();
 </script>
 </body></html>
