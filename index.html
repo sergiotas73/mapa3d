@@ -107,7 +107,7 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
-/* ---------- Instrumentación de errores visible (sin romper nada) ---------- */
+/* ---------- Instrumentación de errores visible ---------- */
 window.addEventListener('error', e => {
   const m = document.getElementById('msg');
   if (m) { m.textContent = 'ERROR: ' + (e.message || 'desconocido') + (e.lineno ? ' (línea ' + e.lineno + ')' : ''); m.style.display = 'block'; }
@@ -143,7 +143,6 @@ let opts = { labels: true, voice: true, haptic: true, bld: true, r: 600, z: 17, 
 try { Object.assign(opts, JSON.parse(LS.get('opts'))); } catch (e) {}
 let data = { type: 'FeatureCollection', features: [] };
 try { data = JSON.parse(LS.get('kmz-data')) || data; } catch (e) {}
-// BLINDAJE: asegura properties e id en cada feature, aunque venga mal
 if (data && Array.isArray(data.features)) {
   data.features.forEach((f, i) => {
     if (!f) return;
@@ -151,11 +150,21 @@ if (data && Array.isArray(data.features)) {
     f.properties.id = i;
   });
 }
+
+/* ============================================================
+   CORRECCIÓN DEL TDZ: todas las variables de estado globales
+   se declaran AQUÍ ARRIBA, antes de map.on('style.load', ...),
+   porque style.load puede dispararse antes de que el script
+   termine de ejecutarse (estilo en caché) y usa d3busy, tOff,
+   is3d, follow, opts, data, etc.
+   ============================================================ */
 let is3d = false, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
 let selectedFeature = null, gpsMode = 'general';
 let visited = new Set();
 try { const v = JSON.parse(LS.get('visited') || '[]'); v.forEach(i => visited.add(i)); } catch (e) {}
+// AQUÍ: tOff y d3busy movidos arriba para evitar TDZ en style.load -> set3d
+let tOff = 0, d3busy = false;
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
 
 const dist = (a, b) => Math.hypot((b[0] - a[0]) * R * Math.cos((a[1] + b[1]) / 2 * R), (b[1] - a[1]) * R) * 6371008;
@@ -770,7 +779,7 @@ function stepSim(dt) {
   fix(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, brg(a, b), 17);
 }
 
-let tOff = 0, d3busy = false;
+/* tOff y d3busy ya se declaran arriba, junto al resto de estado global */
 function terrainOffWhenFlat() {
   cancelAnimationFrame(tOff); const t0 = performance.now();
   const chk = t => { if (is3d) { tOff = 0; return; } if (map.getPitch() < 1.5 || t - t0 > 2500) { try { map.setTerrain(null); } catch (e) {} tOff = 0; return; } tOff = requestAnimationFrame(chk); };
