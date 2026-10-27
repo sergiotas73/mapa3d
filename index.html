@@ -390,8 +390,7 @@ function updSelArrow() {
   const c = ptOf(selectedFeature);
   const b = brg(origin, c);
   const rot = b - map.getBearing();
-  const p = $('#selArrowPath');
-  p.style.transform = `rotate(${rot}deg)`;
+  $('#selArrowPath').style.transform = `rotate(${rot}deg)`;
 }
 function updListSelection() {
   document.querySelectorAll('.i').forEach(el => {
@@ -477,7 +476,14 @@ const carLayer = {
 };
 
 /* ---------- Animación ---------- */
-function loop() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
+/* CORREGIDO: loop() cancela siempre cualquier RAF pendiente antes de crear uno nuevo.
+   Así, si stopGps() mata el loop (raf=0 al ejecutarse el tick), startGps() lo reactiva
+   de forma fiable, aunque haya un tick en cola que intentaría matarlo. */
+function loop() {
+  if (raf) { try { cancelAnimationFrame(raf); } catch (e) {} raf = 0; }
+  last = performance.now();
+  raf = requestAnimationFrame(tick);
+}
 function tick(t) {
   const dt = Math.min((t - last) / 1000 || 0.016, 0.1); last = t;
   if (wid === null && !sim && cmode !== 'A') { raf = 0; return; }
@@ -541,8 +547,6 @@ function setFollow(on) {
   if (on) { camZ = map.getZoom(); zT = is3d ? 16.4 : 16.9; camB = map.getBearing(); camP = map.getPitch(); pT = route ? 80 : 62; }
   setPad(); applyVis(); applyLock(); updIcons(); updSpeed(); sync();
 }
-
-/* ---------- sync(): texto e icono del botón GPS según modo ---------- */
 function sync() {
   const on = wid !== null || sim;
   const b = $('#bG');
@@ -554,14 +558,12 @@ function sync() {
     : 'Mapa';
   updSpeed();
 }
-
-/* ---------- Parar GPS y limpiar estado de seguimiento ---------- */
 function stopGps() {
-  if (wid !== null) { try { navigator.geolocation.clearWatch(wid); } catch (e) {} wid = null; }
+  try { if (wid !== null) navigator.geolocation.clearWatch(wid); } catch (e) {}
+  wid = null;
   sim = null; car.on = false; tgt = null;
   setFollow(false); updIcons(); updSelArrow();
 }
-
 function startGps() {
   if (wid !== null) return;
   if (!navigator.geolocation) return msg('Este navegador no tiene geolocalización');
@@ -572,18 +574,35 @@ function startGps() {
   loop();
 }
 
-/* ---------- Botón GPS: ciclo Posición ↔ Recinto (si hay) / Posición ↔ Mapa general (si no) ---------- */
+/* ---------- Vista "mapa general": encuadra todos los puntos importados ---------- */
+function showGeneral() {
+  if (data.features.length) {
+    const b = new maplibregl.LngLatBounds();
+    data.features.forEach(f => flat(f.geometry.coordinates).forEach(c => b.extend(c)));
+    if (!b.isEmpty()) { map.fitBounds(b, { padding: 60, maxZoom: 16, duration: 700 }); return; }
+  }
+  map.easeTo({ center: [-0.5, 39.4], zoom: 9, duration: 700 });
+}
+
+/* ---------- Botón GPS: ciclo robusto ----------
+   - GPS apagado → posición actual
+   - En current: si hay recinto → recinto; si no → mapa general
+   - En selected o general → posición actual
+*/
 $('#bG').onclick = () => {
-  const on = wid !== null || sim;
-  if (!on) {
-    // GPS apagado → encender y llevar a posición actual
-    startGps();
+  const gpsOn = wid !== null || sim;
+
+  if (!gpsOn) {
+    // Encender y posicionar
     gpsMode = 'current';
+    startGps();
     setFollow(true);
     if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
     else msg('Esperando señal GPS…');
-    return sync();
+    sync();
+    return;
   }
+
   if (gpsMode === 'current') {
     if (selectedFeature) {
       // Posición → Recinto
@@ -592,25 +611,22 @@ $('#bG').onclick = () => {
       focusFeature(selectedFeature, true);
       msg('Recinto: ' + selectedFeature.properties.name);
     } else {
-      // Posición → Mapa general (sin recinto)
-      stopGps();
+      // Posición → Mapa general
       gpsMode = 'general';
+      stopGps();
+      showGeneral();
       msg('Mapa general');
     }
-  } else if (gpsMode === 'selected') {
-    // Recinto → Posición
-    gpsMode = 'current';
-    setFollow(true);
-    if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
-    msg('Posición actual');
-  } else {
-    // Mapa general → Posición
-    if (wid === null) startGps();
-    gpsMode = 'current';
-    setFollow(true);
-    if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
-    else msg('Esperando señal GPS…');
+    sync();
+    return;
   }
+
+  // selected o general → Posición
+  gpsMode = 'current';
+  if (wid === null) startGps();
+  setFollow(true);
+  if (me) map.easeTo({ center: me, zoom: Math.max(map.getZoom(), 16), duration: 600 });
+  else msg('Esperando señal GPS…');
   sync();
 };
 
