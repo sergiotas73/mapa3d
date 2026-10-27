@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101614">
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Mapa%203D%22%2C%22short_name%22%3A%22Mapa3D%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23101614%22%2C%22theme_color%22%3A%22%23101614%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2522http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2522%2520viewBox%253D%25220%25200%252040%252040%2522%253E%253Crect%2520width%253D%252240%2522%2520height%253D%252240%2522%2520fill%253D%2522%2523101614%2522%252F%253E%253Cpath%2520d%253D%2522M20%25205L30%252022H10Z%2522%2520fill%253D%2522%25233ddc84%2522%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
 <title>Mapa 3D</title>
 <link rel="stylesheet" href="maplibre-gl.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
@@ -29,7 +31,8 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .dot{position:absolute;left:-10px;top:-10px;width:20px;height:20px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-sizing:border-box;box-shadow:0 0 8px #000a}
 .cone{position:absolute;left:-80px;top:-80px;width:160px;height:160px;border-radius:50%;background:conic-gradient(from -32deg,rgba(61,220,132,.65) 0deg 64deg,transparent 64deg);-webkit-mask:radial-gradient(circle,#000 6%,transparent 70%);mask:radial-gradient(circle,#000 6%,transparent 70%)}
 @keyframes pl{0%{transform:scale(1);opacity:.9}100%{transform:scale(4);opacity:0}}
-#turn{left:8px;top:calc(64px + env(safe-area-inset-top,0));width:138px;border-radius:16px;padding:10px 12px}
+/* CAMBIO: recuadro de indicaciones bajado a media pantalla */
+#turn{left:8px;top:50%;transform:translateY(-50%);width:138px;border-radius:16px;padding:10px 12px}
 #ta{font-size:40px;line-height:1}
 #td{font:700 24px system-ui,sans-serif}
 #tt{font-size:13px;opacity:.9;margin-top:2px}
@@ -53,6 +56,21 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .maplibregl-popup-content{color:#17201b;border-radius:12px;max-width:250px;padding:14px 16px}
 .maplibregl-popup-close-button{font-size:32px;width:42px;height:42px;line-height:36px;color:#17201b}
 .maplibregl-popup-content .go{margin-top:8px;width:100%;border:0;border-radius:8px;padding:10px;font:600 14px system-ui}
+/* NUEVO: indicador de dirección al recinto seleccionado */
+#selArrow{position:absolute;left:10px;top:calc(64px + env(safe-area-inset-top,0));z-index:6;width:52px;height:52px;display:none;background:var(--gl);border-radius:14px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-sizing:border-box;padding:6px}
+#selArrow svg{width:40px;height:40px;display:block;margin:0 auto}
+#selArrow.on{display:block;background:var(--ac)}
+/* NUEVO: indicador de velocidad centrado, misma altura que brújula y flecha */
+#spd{position:absolute;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top,0));z-index:6;display:none;padding:6px 14px;border-radius:14px;background:var(--gl);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font:700 20px system-ui,sans-serif;box-sizing:border-box;white-space:nowrap;text-align:center;min-width:70px}
+#spd small{display:block;font:600 10px system-ui;opacity:.8;letter-spacing:.5px}
+#spd.on{display:block}
+#spd.hi{background:#ff4d3d;color:#fff}
+/* NUEVO: diálogo de colores KMZ */
+#colorDlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;background:var(--gl);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:16px;padding:16px;display:none;width:min(90vw,360px);box-sizing:border-box}
+#colorDlg h3{margin:0 0 12px;font-size:16px}
+#colorDlg label{display:flex;align-items:center;justify-content:space-between;padding:8px 0;gap:10px}
+#colorDlg input[type=color]{width:48px;height:36px;border:0;background:none;padding:0;border-radius:8px}
+#colorDlg .b{margin-top:12px;width:100%}
 </style>
 <script src="maplibre-gl.js"></script>
 <script>window.maplibregl||document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"><\/script>')</script>
@@ -66,10 +84,14 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <div id="map"></div>
 <div id="bar">
   <button class="b" id="bC">Capas</button><button class="b" id="bK">KMZ</button>
-  <button class="b" id="bL">Puntos</button><button class="b on" id="b3">3D</button>
+  <button class="b" id="bL">Puntos</button><button class="b" id="b3">3D</button>
   <button class="b" id="bG">GPS</button><button class="b" id="bO">Opciones</button>
 </div>
 <div id="cmp"><svg viewBox="0 0 40 40"><path d="M20 2L29 22H11Z" fill="#ff4d3d"/><path d="M20 38L29 22H11Z" fill="#e8eeea"/><text x="20" y="19" text-anchor="middle" font-size="9" font-weight="700" fill="#fff">N</text></svg><span id="cd">0°</span><b id="cm">MANUAL</b></div>
+<!-- NUEVO: indicador de velocidad -->
+<div id="spd"><span id="spdVal">0</span><small>km/h</small></div>
+<!-- NUEVO: flecha indicadora hacia el recinto seleccionado -->
+<div id="selArrow"><svg viewBox="0 0 40 40"><path id="selArrowPath" d="M20 4L32 32H8Z" fill="#2a7fff"/></svg></div>
 <div id="mode"></div>
 <div class="pn" id="lm"></div>
 <div class="pn" id="om"></div>
@@ -78,6 +100,15 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
 <div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"><button class="b" id="bX">Borrar todo</button></div><div id="items"></div></div>
 <div id="msg"></div>
+<!-- NUEVO: diálogo de colores para KMZ -->
+<div id="colorDlg">
+  <h3>Colores de importación</h3>
+  <label>Puntos <input type="color" id="colPt" value="#e5392f"></label>
+  <label>Líneas de itinerario <input type="color" id="colLine" value="#ffd23f"></label>
+  <label>Polígonos <input type="color" id="colPoly" value="#f2b01e"></label>
+  <button class="b go" id="colOk">Importar</button>
+  <button class="b" id="colCancel" style="margin-top:6px">Cancelar</button>
+</div>
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
@@ -106,13 +137,14 @@ const GRUPO = { TCS: 'tierras de cultivo de secano', TCR: 'tierras de cultivo de
 const ARW = { left: '←', right: '→', 'slight left': '↖', 'slight right': '↗', 'sharp left': '↙', 'sharp right': '↘', straight: '↑', uturn: '↶', rot: '↻', arrive: '⚑' };
 
 let sel = LS.get('base'); if (!BASES.some(b => b.id === sel)) sel = 'pnoa';
-let opts = { labels: true, voice: true, haptic: true, bld: true, r: 600, z: 17, icon: 'red' };
+let opts = { labels: true, voice: true, haptic: true, bld: true, r: 600, z: 17, icon: 'yellow', listOnlyPts: true };
 try { Object.assign(opts, JSON.parse(LS.get('opts'))); } catch (e) {}
 let data = { type: 'FeatureCollection', features: [] };
 try { data = JSON.parse(LS.get('kmz-data')) || data; } catch (e) {}
 data.features.forEach((f, i) => f.properties.id = i);
-let is3d = true, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
+let is3d = false, follow = false, cmode = 'M', wid = null, me = null, tgt = null, route = null, sim = null, selF = null, prev3d = false, devS = null, openP = null, listSorted = false, pT = 62;
 let speed = 0, raf = 0, last = 0, fixT = 0, camB = 0, camZ = 17, camP = 0, zT = 17.8, dev = null, job = null, rows = [], lbl = [], lt = 0, ac;
+let selectedFeature = null, selArrowEl = null, gpsMode = 'general';
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
 
 const dist = (a, b) => Math.hypot((b[0] - a[0]) * R * Math.cos((a[1] + b[1]) / 2 * R), (b[1] - a[1]) * R) * 6371008;
@@ -168,8 +200,8 @@ function tileKeys(pts, specs, r) {
   }
   return [...S];
 }
-const ROAD_W = 70;   // metros a cada lado de la línea de los caminos
-function sampleLine(c, step) {   // puntos cada `step` metros a lo largo de la línea
+const ROAD_W = 70;
+function sampleLine(c, step) {
   const out = [c[0]]; let acc = 0;
   for (let i = 1; i < c.length; i++) {
     const a = c[i - 1], b = c[i], d = dist(a, b);
@@ -236,11 +268,12 @@ function addDem(spec) {
 
 map.on('style.load', () => {
   map.addSource('kml', { type: 'geojson', data });
-  map.addLayer({ id: 'kml-fill', type: 'fill', source: 'kml', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#f2b01e', 'fill-opacity': 0.25 } });
+  const kmlColors = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
+  map.addLayer({ id: 'kml-fill', type: 'fill', source: 'kml', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': kmlColors.poly, 'fill-opacity': 0.25 } });
   map.addLayer({ id: 'kml-case', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#000', 'line-opacity': 0.7, 'line-width': 6 } });
-  map.addLayer({ id: 'kml-line', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#ffd23f', 'line-width': 3 } });
+  map.addLayer({ id: 'kml-line', type: 'line', source: 'kml', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': kmlColors.line, 'line-width': 3 } });
   map.addLayer({ id: 'kml-pts', type: 'circle', source: 'kml', filter: ['==', ['geometry-type'], 'Point'],
-    paint: { 'circle-radius': 7, 'circle-color': '#e5392f', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    paint: { 'circle-radius': 7, 'circle-color': kmlColors.pt, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
   map.addSource('sel', { type: 'geojson', data: EMPTY });
   map.addLayer({ id: 'sel-line', type: 'line', source: 'sel', filter: ['!=', ['geometry-type'], 'Point'], paint: { 'line-color': '#3ddc84', 'line-width': 4.5 } });
   map.addLayer({ id: 'sel-pt', type: 'circle', source: 'sel', filter: ['==', ['geometry-type'], 'Point'],
@@ -262,13 +295,16 @@ map.on('style.load', () => {
   mkDot.setLngLat([0, 0]).addTo(map); mkCone.setLngLat([0, 0]).addTo(map); updIcons();
   try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#dfe9ee',
     'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.4 }); } catch (e) {}
-  set3d(true); render();
+  set3d(is3d, true); render();
   if (data.features.length) fit(data.features);
 });
 
 map.on('click', e => {
   const q = map.queryRenderedFeatures(e.point, { layers: ['kml-pts', 'kml-line', 'kml-fill'] })[0];
-  if (!q) return;
+  if (!q) {
+    if (selectedFeature) { selectedFeature = null; updSelArrow(); updListSelection(); map.getSource('sel').setData(EMPTY); }
+    return;
+  }
   const f = data.features.find(x => x.properties.id === q.properties.id && x.geometry.type === q.geometry.type);
   if (f) select(f);
   popup(q.properties, q.geometry.type === 'Point' ? q.geometry.coordinates : [e.lngLat.lng, e.lngLat.lat], f);
@@ -280,7 +316,7 @@ map.on('pitch', e => { if (e.originalEvent && follow) pT = camP = map.getPitch()
 map.on('rotate', () => { const b = map.getBearing(); $('#cmp svg').style.transform = `rotate(${-b}deg)`; $('#cd').textContent = Math.round((b + 360) % 360) + '°'; });
 map.on('moveend', () => { if (!lt) lt = setTimeout(() => { lt = 0; labels(); }, follow ? 1500 : 200); });
 function applyRot() { const rot = cmode === 'M'; map.dragRotate[rot ? 'enable' : 'disable'](); map.touchZoomRotate[rot ? 'enableRotation' : 'disableRotation'](); }
-function applyLock() {   // en ruta: mapa bloqueado; solo se puede cambiar la inclinación (dos dedos arriba/abajo)
+function applyLock() {
   const on = follow && !!route;
   ['dragPan', 'scrollZoom', 'doubleClickZoom', 'boxZoom', 'keyboard'].forEach(h => map[h][on ? 'disable' : 'enable']());
   if (on) { map.dragRotate.disable(); map.touchZoomRotate.disable(); } else { map.touchZoomRotate.enable(); applyRot(); }
@@ -291,7 +327,8 @@ function setMode(m) {
   if (m === 'N') map.easeTo({ bearing: 0, duration: 500 });
   if (m === 'A') { startCompass(); if (wid === null && !sim) startGps(); loop(); }
   $('#cmp').classList.toggle('on', m === 'A'); $('#cm').textContent = MODES[m][0];
-  const p = $('#mode'); p.style.display = m === 'M' ? 'none' : 'block'; p.className = m === 'A' ? 'a' : ''; p.textContent = m === 'A' ? 'GIRO AUTOMÁTICO' : 'NORTE ARRIBA';
+  const p = $('#mode'); p.style.display = m === 'M' ? 'none' : 'block'; p.className = m === 'A' ? 'a' : '';
+  p.textContent = m === 'A' ? 'GIRO AUTOMÁTICO' : 'NORTE ARRIBA';
   updIcons(); msg('Brújula: ' + MODES[m][1]); buzz([15, 40, 15]);
 }
 $('#cmp').onclick = () => setMode({ M: 'N', N: 'A', A: 'M' }[cmode]);
@@ -305,7 +342,7 @@ function popup(p, c, f) {
   const pop = new maplibregl.Popup({ maxWidth: '250px' }).setLngLat(c).setDOMContent(d).addTo(map);
 }
 
-/* ---------- Nombres de puntos (marcadores HTML: funcionan sin fuentes ni red) ---------- */
+/* ---------- Nombres de puntos visibles también en 3D ---------- */
 function labels() {
   lbl.forEach(m => m.remove()); lbl = [];
   if (!opts.labels || !map.getLayer('kml-pts') || map.getZoom() < 14) return;
@@ -313,12 +350,16 @@ function labels() {
   for (const f of data.features) {
     if (f.geometry.type !== 'Point' || !b.contains(f.geometry.coordinates)) continue;
     const e = document.createElement('div'); e.className = 'lb'; e.textContent = f.properties.name;
-    lbl.push(new maplibregl.Marker({ element: e, anchor: 'left', offset: [11, 0] }).setLngLat(f.geometry.coordinates).addTo(map));
+    const el = is3d && map.queryTerrainElevation ? map.queryTerrainElevation(f.geometry.coordinates) : undefined;
+    const marker = new maplibregl.Marker({ element: e, anchor: 'left', offset: [11, 0] }).setLngLat(f.geometry.coordinates);
+    if (el != null) marker.setLngLat([f.geometry.coordinates[0], f.geometry.coordinates[1]]);
+    lbl.push(marker.addTo(map));
     if (++n >= 90) break;
   }
 }
+map.on('terrain', () => { if (opts.labels) setTimeout(labels, 300); });
 
-/* ---------- Selección de punto: vista 2D limpia del recinto + uso SIGPAC por voz ---------- */
+/* ---------- Selección de punto ---------- */
 const recinto = f => f.geometry.type === 'Polygon' ? f : data.features.find(g => g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0]));
 const usoOf = f => { const p = f.properties, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
 function usoSay(f) {
@@ -330,12 +371,39 @@ function usoSay(f) {
   return s;
 }
 function select(f, quiet) {
-  selF = f; const poly = recinto(f);
+  if (selectedFeature && selectedFeature.properties.id === f.properties.id && selectedFeature.geometry.type === f.geometry.type) {
+    selectedFeature = null;
+    map.getSource('sel').setData(EMPTY);
+    updSelArrow(); updListSelection();
+    return null;
+  }
+  selF = f; selectedFeature = f;
+  const poly = recinto(f);
   map.getSource('sel').setData({ type: 'FeatureCollection', features: poly && poly !== f ? [poly, f] : [f] });
   if (!quiet) { const s = usoSay(f); if (s) speak(s); }
+  updSelArrow(); updListSelection();
   return poly;
 }
-// Descarga a la caché las teselas del encuadre de destino (máx. 250 ms) para que lleguen ya cargadas
+function updSelArrow() {
+  const el = $('#selArrow');
+  if (!selectedFeature || !me) { el.classList.remove('on'); return; }
+  el.classList.add('on');
+  const c = ptOf(selectedFeature);
+  const b = brg(me, c);
+  const rot = b - (cmode === 'N' ? 0 : map.getBearing());
+  $('#selArrowPath').style.transform = `rotate(${rot}deg)`;
+  $('#selArrowPath').style.transformOrigin = '20px 20px';
+}
+function updListSelection() {
+  document.querySelectorAll('.i').forEach(el => {
+    const f = el._feature;
+    if (f && selectedFeature && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
+      el.style.background = '#3ddc84'; el.style.color = '#06210f';
+    } else {
+      el.style.background = ''; el.style.color = '';
+    }
+  });
+}
 async function warm(c, z, b) {
   if (!window.caches || !TPL[sel]) return;
   const zt = Math.min(19, Math.round(z + 1)), r = (b ? dist([b.getWest(), b.getSouth()], [b.getEast(), b.getNorth()]) / 2 : 120) + 40;
@@ -344,6 +412,7 @@ async function warm(c, z, b) {
 }
 async function focusFeature(f, quiet) {
   const poly = select(f, quiet);
+  if (!poly && selectedFeature === null) return;
   if (is3d) { prev3d = true; set3d(false, true); }
   setFollow(false);
   let b = null, cam = { center: ptOf(f), zoom: 17.5 };
@@ -357,7 +426,7 @@ async function focusFeature(f, quiet) {
   map.easeTo({ center: c, zoom: cam.zoom, pitch: 0, bearing: 0, duration: 650, easing: easeOut });
 }
 
-/* ---------- Icono de posición: coche de color o punto azul con pulso + cono de orientación ---------- */
+/* ---------- Icono de posición ---------- */
 const CARCOL = { red: 0xf2542d, blue: 0x2a7fff, green: 0x2fb36b, yellow: 0xf5c518, white: 0xf2f2f2, black: 0x23262b };
 const mkEl = (cls, html) => { const e = document.createElement('div'); e.className = cls; e.innerHTML = html; return e; };
 const dotEl = mkEl('dotm', '<div class="pulse"></div><div class="dot"></div>'), coneEl = mkEl('conem', '<div class="cone"></div>');
@@ -365,10 +434,10 @@ const mkDot = new maplibregl.Marker({ element: dotEl, pitchAlignment: 'viewport'
 const mkCone = new maplibregl.Marker({ element: coneEl, pitchAlignment: 'map', rotationAlignment: 'map' });
 function updIcons() {
   const a = cmode === 'A', on = car.on;
-  car.show = on && opts.icon !== 'dot' && !(a && !follow);                 // coche (si no es el punto azul ni el modo AUTO parado)
+  car.show = on && opts.icon !== 'dot' && !(a && !follow);
   dotEl.style.display = on && (opts.icon === 'dot' || (a && !follow)) ? 'block' : 'none';
-  coneEl.style.display = on && a ? 'block' : 'none';                      // cono verde solo en modo AUTO
-  if (carLayer.bm) carLayer.bm.color.set(CARCOL[opts.icon] || CARCOL.red);
+  coneEl.style.display = on && a ? 'block' : 'none';
+  if (carLayer.bm) carLayer.bm.color.set(CARCOL[opts.icon] || CARCOL.yellow);
   map.triggerRepaint();
 }
 
@@ -379,7 +448,7 @@ const carLayer = {
     this.camera = new THREE.Camera(); this.scene = new THREE.Scene();
     const mat = c => new THREE.MeshLambertMaterial({ color: c });
     const box = (w, l, h, x, y, z, c) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, l, h), typeof c === 'number' ? mat(c) : c); m.position.set(x, y, z); return m; };
-    const g = new THREE.Group(); this.bm = mat(CARCOL[opts.icon] || CARCOL.red);
+    const g = new THREE.Group(); this.bm = mat(CARCOL[opts.icon] || CARCOL.yellow);
     g.add(box(1.85, 4.3, 0.6, 0, 0, 0.55, this.bm), box(1.55, 2.3, 0.55, 0, -0.25, 1.1, 0x1b2a38), box(1.5, 2.1, 0.06, 0, -0.25, 1.4, this.bm));
     g.add(box(1.6, 0.12, 0.2, 0, 2.16, 0.62, 0xfff2b0), box(1.6, 0.12, 0.2, 0, -2.16, 0.62, 0xc01818));
     for (const [x, y] of [[-.92, 1.35], [.92, 1.35], [-.92, -1.35], [.92, -1.35]]) {
@@ -397,9 +466,9 @@ const carLayer = {
   render(gl, a) {
     if (!car.on || !car.show) return;
     const M = (a && a.defaultProjectionData && a.defaultProjectionData.mainMatrix) || (a && a.modelViewProjectionMatrix) || a;
-    const mpp = 78271.517 * Math.cos(car.lat * R) / Math.pow(2, map.getZoom());   // metros por píxel (mapa de 512 px)
-    const k = Math.max(1, 34 * mpp / 4.3);                                         // el coche mide ~34 px en pantalla; a zoom alto, tamaño real
-    const mc = maplibregl.MercatorCoordinate.fromLngLat([car.lng, car.lat], car.z - 0.05 * k);   // ruedas apoyadas en el suelo
+    const mpp = 78271.517 * Math.cos(car.lat * R) / Math.pow(2, map.getZoom());
+    const k = Math.max(1, 34 * mpp / 4.3);
+    const mc = maplibregl.MercatorCoordinate.fromLngLat([car.lng, car.lat], car.z - 0.05 * k);
     const s = mc.meterInMercatorCoordinateUnits() * k;
     const l = new THREE.Matrix4().makeTranslation(mc.x, mc.y, mc.z).scale(new THREE.Vector3(s, -s, s))
       .multiply(new THREE.Matrix4().makeRotationZ(-car.hdg * R));
@@ -408,20 +477,20 @@ const carLayer = {
   }
 };
 
-/* ---------- Animación: coche con predicción de movimiento y cámara suavizada ---------- */
+/* ---------- Animación ---------- */
 function loop() { if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
 function tick(t) {
   const dt = Math.min((t - last) / 1000 || 0.016, 0.1); last = t;
   if (wid === null && !sim && cmode !== 'A') { raf = 0; return; }
   if (dev != null) devS = devS == null ? dev : ang(devS, dev, 1 - Math.exp(-dt * 6));
   if (sim) stepSim(dt);
-  if (cmode === 'A' && !follow && devS != null) map.jumpTo({ bearing: devS });   // giro automático con el sensor
+  if (cmode === 'A' && !follow && devS != null) map.jumpTo({ bearing: devS });
   if (tgt) {
     const age = Math.min((performance.now() - fixT) / 1000, 2.5), d = speed > 0.5 ? speed * age : 0, hr = tgt.hdg * R;
     const pl = tgt.lng + d * Math.sin(hr) / (111320 * Math.cos(tgt.lat * R)), pa = tgt.lat + d * Math.cos(hr) / 110540;
     const a = 1 - Math.exp(-dt * 8);
     car.lng += (pl - car.lng) * a; car.lat += (pa - car.lat) * a;
-    const th = speed > 3 || devS == null ? tgt.hdg : devS;   // rápido: rumbo GPS; lento o parado: sensor de orientación
+    const th = speed > 3 || devS == null ? tgt.hdg : devS;
     car.hdg = ang(car.hdg, th, 1 - Math.exp(-dt * 3));
     const e = map.queryTerrainElevation && map.queryTerrainElevation([car.lng, car.lat]);
     car.z += ((e || 0) - car.z) * 0.35;
@@ -444,23 +513,36 @@ function fix(lng, lat, h, sp) {
     tgt.lng = lng; tgt.lat = lat;
   }
   fixT = performance.now(); speed = sp || 0; me = [lng, lat]; updIcons(); if (openP === 'list' && !listSorted) render(); progress();
+  updSelArrow(); updSpeed();
+}
+
+/* ---------- NUEVO: indicador de velocidad ---------- */
+function updSpeed() {
+  const el = $('#spd'), v = $('#spdVal');
+  const kmh = Math.round((speed || 0) * 3.6);
+  // Solo en modo conducción (siguiendo activo) y superando 20 km/h
+  const show = follow && kmh > 20;
+  el.classList.toggle('on', show);
+  el.classList.toggle('hi', kmh > 120);   // rojo si se supera 120 km/h
+  if (show) v.textContent = kmh;
 }
 
 /* ---------- Seguimiento y GPS ---------- */
 function setPad() { map.setPadding(follow && is3d ? { top: Math.round(innerHeight * 0.4), bottom: 0, left: 0, right: 0 } : { top: 0, bottom: 0, left: 0, right: 0 }); }
 function applyVis() {
   if (map.getLayer('bld')) map.setLayoutProperty('bld', 'visibility', is3d && opts.bld && !follow ? 'visible' : 'none');
-  if (map.getLayer('hill')) map.setLayoutProperty('hill', 'visibility', sel === 'osm' ? 'visible' : 'none');   // las ortofotos ya traen sus sombras
+  if (map.getLayer('hill')) map.setLayoutProperty('hill', 'visibility', sel === 'osm' ? 'visible' : 'none');
 }
 function setFollow(on) {
   if (on === follow) return sync();
   follow = on;
   if (on) { camZ = map.getZoom(); zT = is3d ? 16.4 : 16.9; camB = map.getBearing(); camP = map.getPitch(); pT = route ? 80 : 62; }
-  setPad(); applyVis(); applyLock(); updIcons(); sync();
+  setPad(); applyVis(); applyLock(); updIcons(); updSpeed(); sync();
 }
 function sync() {
   const on = wid !== null || sim;
   $('#bG').classList.toggle('on', !!on); $('#bG').textContent = !on ? 'GPS' : follow ? 'Siguiendo' : 'Centrar';
+  updSpeed();
 }
 function startGps() {
   if (wid !== null) return;
@@ -471,14 +553,25 @@ function startGps() {
   loop();
 }
 $('#bG').onclick = () => {
-  if ((wid !== null || sim) && follow) {
-    if (wid !== null) navigator.geolocation.clearWatch(wid);
-    wid = null; sim = null; car.on = false; tgt = null; me = null; setFollow(false); updIcons(); return sync();
+  const on = wid !== null || sim;
+  if (!on) {
+    startGps();
+    if (selectedFeature) { gpsMode = 'selected'; focusFeature(selectedFeature, true); }
+    else { gpsMode = 'current'; setFollow(true); }
+    return;
   }
-  startGps(); setFollow(true);
+  if (gpsMode === 'current') {
+    if (selectedFeature) { gpsMode = 'selected'; focusFeature(selectedFeature, true); setFollow(false); }
+    else { gpsMode = 'general'; if (wid !== null) navigator.geolocation.clearWatch(wid); wid = null; sim = null; car.on = false; tgt = null; me = null; setFollow(false); updIcons(); }
+  } else if (gpsMode === 'selected') {
+    gpsMode = 'general'; if (wid !== null) navigator.geolocation.clearWatch(wid); wid = null; sim = null; car.on = false; tgt = null; me = null; setFollow(false); updIcons();
+  } else {
+    gpsMode = 'current'; setFollow(true);
+  }
+  sync();
 };
 
-/* ---------- Ruta: tiempo, distancia, voz y giros ---------- */
+/* ---------- Ruta ---------- */
 function turnTxt(s) {
   const M = { left: 'a la izquierda', right: 'a la derecha', 'slight left': 'ligeramente a la izquierda', 'slight right': 'ligeramente a la derecha', 'sharp left': 'cerrado a la izquierda', 'sharp right': 'cerrado a la derecha' }, m = s.mod || '', n = s.name ? ' por ' + s.name : '';
   if (s.type === 'arrive') return 'Ha llegado a su destino';
@@ -492,7 +585,7 @@ function turnTxt(s) {
 async function routeTo(d, re, f) {
   const o = me || map.getCenter().toArray();
   if (!me && !re) msg('Sin posición GPS: la ruta sale del centro del mapa');
-  if (window.speechSynthesis && !re) speechSynthesis.speak(new SpeechSynthesisUtterance(''));   // habilita la voz desde este toque
+  if (window.speechSynthesis && !re) speechSynthesis.speak(new SpeechSynthesisUtterance(''));
   let c, dur, tot, steps = [], line = false;
   try {
     const ctl = new AbortController(); setTimeout(() => ctl.abort(), 7000);
@@ -564,19 +657,25 @@ function stepSim(dt) {
 /* ---------- 3D, capas y mapas offline ---------- */
 let tOff = 0;
 const easeOut = t => 1 - Math.pow(1 - t, 3);
-function terrainOffWhenFlat() {   // quita el relieve solo cuando la vista ya es cenital: sin saltos
+function terrainOffWhenFlat() {
   cancelAnimationFrame(tOff); const t0 = performance.now();
   const chk = t => { if (is3d) return; if (map.getPitch() < 1.5 || t - t0 > 2500) { map.setTerrain(null); return; } tOff = requestAnimationFrame(chk); };
   tOff = requestAnimationFrame(chk);
 }
 function set3d(on, noCam) {
+  const was = is3d;
   is3d = on; $('#b3').classList.toggle('on', on); applyVis();
-  if (on) {   // el relieve se activa con la vista aún plana y crece al inclinar
+  if (on) {
     cancelAnimationFrame(tOff);
     const has = map.getTerrain ? map.getTerrain() : map.terrain;
     if (map.getSource('dem') && !has) map.setTerrain({ source: 'dem', exaggeration: EXA });
+    if (map.getSource('dem') && !(map.getTerrain ? map.getTerrain() : map.terrain)) {
+      setTimeout(() => { if (is3d && map.getSource('dem') && !(map.getTerrain ? map.getTerrain() : map.terrain)) map.setTerrain({ source: 'dem', exaggeration: EXA }); }, 200);
+    }
   } else terrainOffWhenFlat();
-  if (follow) setPad(); else if (!noCam) map.easeTo({ pitch: on ? 62 : 0, duration: 650, easing: easeOut });
+  if (follow) setPad(); else if (!noCam && was !== on) map.easeTo({ pitch: on ? 62 : 0, duration: 650, easing: easeOut });
+  setTimeout(labels, 400);
+  updSpeed();
 }
 $('#b3').onclick = () => { prev3d = false; set3d(!is3d); };
 
@@ -605,7 +704,6 @@ function panel(id) {
 }
 $('#bC').onclick = () => panel('lm');
 
-// .pmtiles raster = mapa base; si el nombre contiene dem/mdt/terrain = relieve (Terrarium)
 $('#fP').onchange = async e => {
   for (const f of e.target.files) {
     try {
@@ -628,9 +726,9 @@ $('#fP').onchange = async e => {
 /* ---------- Opciones ---------- */
 function optMenu() {
   const m = $('#om'); m.textContent = '';
-  [['labels', 'Nombres de puntos'], ['voice', 'Voz'], ['haptic', 'Vibración y sonido'], ['bld', 'Edificios 3D (parado)']].forEach(([k, n]) => {
+  [['labels', 'Nombres de puntos'], ['voice', 'Voz'], ['haptic', 'Vibración y sonido'], ['bld', 'Edificios 3D (parado)'], ['listOnlyPts', 'Lista solo puntos']].forEach(([k, n]) => {
     const b = btn((opts[k] ? '☑  ' : '☐  ') + n);
-    b.onclick = () => { opts[k] = !opts[k]; LS.set('opts', JSON.stringify(opts)); if (k === 'voice' && !opts.voice && window.speechSynthesis) speechSynthesis.cancel(); labels(); applyVis(); optMenu(); };
+    b.onclick = () => { opts[k] = !opts[k]; LS.set('opts', JSON.stringify(opts)); if (k === 'voice' && !opts.voice && window.speechSynthesis) speechSynthesis.cancel(); labels(); applyVis(); if (k === 'listOnlyPts') render(); optMenu(); };
     m.append(b);
   });
   const r = document.createElement('div'); r.className = 'row';
@@ -646,8 +744,29 @@ function optMenu() {
   ic.querySelector('#oI').onchange = e => { opts.icon = e.target.value; LS.set('opts', JSON.stringify(opts)); updIcons(); };
   const d = btn(job ? 'Cancelar descarga' : 'Descargar mapa cerca de los puntos'); d.onclick = dlZone; m.append(d);
   const x = btn('Borrar mapas descargados'); x.onclick = async () => { if (window.caches && confirm('¿Borrar todos los mapas descargados?')) { await caches.delete(CACHE); msg('Caché de mapas borrada'); } }; m.append(x);
+  const c = btn('Colores de importación KMZ'); c.onclick = () => { optMenuClose(); showColorDlg(null); }; m.append(c);
 }
+function optMenuClose() { if (openP === 'om') panel('om'); }
 $('#bO').onclick = () => panel('om');
+
+/* ---------- Diálogo de colores al importar KMZ ---------- */
+let pendingFiles = null;
+function showColorDlg(files) {
+  pendingFiles = files;
+  const c = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
+  $('#colPt').value = c.pt; $('#colLine').value = c.line; $('#colPoly').value = c.poly;
+  $('#colorDlg').style.display = 'block';
+}
+$('#colOk').onclick = async () => {
+  opts.kmlColors = { pt: $('#colPt').value, line: $('#colLine').value, poly: $('#colPoly').value };
+  LS.set('opts', JSON.stringify(opts));
+  if (map.getLayer('kml-pts')) map.setPaintProperty('kml-pts', 'circle-color', opts.kmlColors.pt);
+  if (map.getLayer('kml-line')) map.setPaintProperty('kml-line', 'line-color', opts.kmlColors.line);
+  if (map.getLayer('kml-fill')) map.setPaintProperty('kml-fill', 'fill-color', opts.kmlColors.poly);
+  $('#colorDlg').style.display = 'none';
+  if (pendingFiles) { await importKmzFiles(pendingFiles); pendingFiles = null; }
+};
+$('#colCancel').onclick = () => { $('#colorDlg').style.display = 'none'; pendingFiles = null; };
 
 /* ---------- KMZ / KML ---------- */
 async function readFile(f) {
@@ -660,7 +779,7 @@ async function readFile(f) {
   return parseKML(txt, f.name);
 }
 function parseKML(t, src) {
-  t = t.slice(Math.max(0, t.indexOf('<')));   // quita BOM/espacios previos
+  t = t.slice(Math.max(0, t.indexOf('<')));
   const d = new DOMParser().parseFromString(t, 'text/xml'), out = [];
   if (d.getElementsByTagName('parsererror').length) throw new Error('KML no válido');
   const co = s => s.trim().split(/\s+/).map(p => p.split(',').map(Number)).filter(a => a.length >= 2 && !isNaN(a[0]) && !isNaN(a[1])).map(a => [a[0], a[1]]);
@@ -672,7 +791,11 @@ function parseKML(t, src) {
     const ks = Object.keys(ext), k = ks.find(x => /uso.*sigpac|sigpac.*uso/i.test(x)) || ks.find(x => /^uso/i.test(x)),
       fld = (kr, tr) => { const kk = ks.find(x => kr.test(x)); if (kk) return ext[kk]; const mm = tr.exec(txt); return mm ? mm[1] : ''; };
     let uso = k ? ext[k] : ''; if (!uso) { const m = /uso[_ ]?sigpac[\s|:=]+([A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]+)/i.exec(txt); if (m) uso = m[1]; }
-    const props = { name: g('name') || '(sin nombre)', desc: (txt || ks.map(x => x + ': ' + ext[x]).join(' · ')).slice(0, 400), uso, grupo: fld(/grupo_?cult/i, /grupo[_ ]?cult\w*[\s|:=]+([A-Za-z]+)/i), pend: fld(/pdte|pend/i, /(?:pdte|pend)\w*[\s|:=]+(-?[\d.,]+)/i), src }, gs = [];
+    const props = { name: g('name') || '(sin nombre)', desc: (txt || ks.map(x => x + ': ' + ext[x]).join(' · ')).slice(0, 400), uso,
+      grupo: fld(/grupo_?cult/i, /grupo[_ ]?cult\w*[\s|:=]+([A-Za-z]+)/i),
+      pend: fld(/pdte|pend/i, /(?:pdte|pend)\w*[\s|:=]+(-?[\d.,]+)/i),
+      sup: fld(/superf|has|ha\b|area/i, /(?:superf\w*|has|ha|area)[\s|:=]+([\d.,]+)/i),
+      src }, gs = [];
     for (const e of p.getElementsByTagName('Point')) gs.push({ type: 'Point', coordinates: co(e.getElementsByTagName('coordinates')[0].textContent)[0] });
     for (const e of p.getElementsByTagName('LineString')) gs.push({ type: 'LineString', coordinates: co(e.getElementsByTagName('coordinates')[0].textContent) });
     for (const e of p.getElementsByTagName('Polygon')) gs.push({ type: 'Polygon', coordinates: [...e.getElementsByTagName('coordinates')].map(c => co(c.textContent)) });
@@ -696,43 +819,77 @@ function save() {
 }
 $('#bK').onclick = () => $('#fK').click();
 $('#fK').onchange = async e => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if (!files.length) return;
+  const kc = opts.kmlColors || { pt: '#e5392f', line: '#ffd23f', poly: '#f2b01e' };
+  if (map.getLayer('kml-pts')) map.setPaintProperty('kml-pts', 'circle-color', kc.pt);
+  if (map.getLayer('kml-line')) map.setPaintProperty('kml-line', 'line-color', kc.line);
+  if (map.getLayer('kml-fill')) map.setPaintProperty('kml-fill', 'fill-color', kc.poly);
+  showColorDlg(files);
+};
+async function importKmzFiles(files) {
   let n = 0, bad = 0;
-  for (const f of e.target.files) {
+  for (const f of files) {
     try { const fs = await readFile(f); data.features.push(...fs); n += fs.length; fit(fs); } catch (err) { bad = 1; msg(f.name + ': ' + err.message); }
   }
-  e.target.value = ''; save(); render();
+  save(); render();
   if (n) msg(n + ' elementos importados'); else if (!bad) msg('No se encontraron puntos, líneas ni polígonos en el archivo');
-};
-
-/* ---------- Lista de puntos: distancia y acimut desde tu posición ---------- */
-// Rumbo hacia el que mira la parte trasera del móvil cuando está en vertical (salpicadero); casi plano: rumbo de la parte superior
-function headingOf(a, b, g) {
-  const x = b * R, y = g * R, z = a * R, cY = Math.cos(y), cZ = Math.cos(z), sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
-  const vx = -cZ * sY - sZ * sX * cY, vy = -sZ * sY + cZ * sX * cY;
-  return Math.hypot(vx, vy) < 0.35 ? (360 - a) % 360 : (Math.atan2(vx, vy) / R + 360) % 360;
 }
-function startCompass() {
-  if (startCompass.on) return; startCompass.on = 1;
-  const h = e => {
-    let v;
-    if (e.webkitCompassHeading != null) v = e.webkitCompassHeading;
-    else if (e.alpha != null && (e.absolute || e.type === 'deviceorientationabsolute')) v = headingOf(e.alpha, e.beta || 0, e.gamma || 0);
-    if (v != null && !isNaN(v)) dev = v;
-  };
-  const go = () => { addEventListener('deviceorientationabsolute', h, true); addEventListener('deviceorientation', h, true); };
-  if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission().then(r => r === 'granted' && go()).catch(() => {}); else go();
+
+/* ---------- Lista de puntos ---------- */
+function superficieOf(f) {
+  const p = f.properties;
+  if (p.sup) return p.sup;
+  if (f.geometry.type === 'Polygon') {
+    const ring = f.geometry.coordinates[0];
+    let area = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      const a = ring[i], b = ring[i + 1];
+      area += (b[0] - a[0]) * R * (2 + Math.sin(a[1] * R) + Math.sin(b[1] * R));
+    }
+    area = Math.abs(area * 6371008 * 6371008 / 2);
+    return area > 10000 ? (area / 10000).toLocaleString('es-ES', { maximumFractionDigits: 2 }) + ' ha' : Math.round(area).toLocaleString('es-ES') + ' m²';
+  }
+  return '';
+}
+function regadioOf(f) {
+  const p = f.properties, g = String(p.grupo || '').toUpperCase(), desc = String(p.desc || '').toLowerCase();
+  if (g === 'TCR' || g === 'CP' && /regad/i.test(desc)) return 'Regadío';
+  if (g === 'TCS') return 'Secano';
+  if (/secano/i.test(desc)) return 'Secano';
+  if (/regad/i.test(desc)) return 'Regadío';
+  const u = String(p.uso || '').toUpperCase();
+  if (['IV','TH','TA'].includes(u) && /regad/i.test(desc)) return 'Regadío';
+  if (g) return GRUPO[g] ? (g === 'TCR' ? 'Regadío' : g === 'TCS' ? 'Secano' : '') : '';
+  return '';
 }
 function render() {
   const q = $('#q').value.toLowerCase(), box = $('#items'); box.textContent = ''; rows = [];
-  const fs = data.features.filter(f => f.properties.name.toLowerCase().includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
-  if (me) fs.sort((a, b) => a.d - b.d);   // más cercanos primero
+  let fs = data.features;
+  if (opts.listOnlyPts) fs = fs.filter(f => f.geometry.type === 'Point');
+  fs = fs.filter(f => f.properties.name.toLowerCase().includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
+  if (me) fs.sort((a, b) => a.d - b.d);
   listSorted = !!me;
   fs.slice(0, 300).forEach(({ f }) => {
     const d = document.createElement('div'), l = document.createElement('div'), s = document.createElement('small'), k = document.createElement('div'), a = document.createElement('div');
     d.className = 'i'; l.className = 'l'; k.className = 'k'; a.className = 'a';
-    l.textContent = f.properties.name; s.textContent = f.geometry.type + (f.properties.uso ? ' · uso ' + f.properties.uso : ''); l.append(s);
-    d.append(l, k, a); d.onclick = () => { focusFeature(f); closeList(); };
-    box.append(d); rows.push({ f, k, a });
+    d._feature = f;
+    l.textContent = f.properties.name;
+    const sup = superficieOf(f), pend = f.properties.pend || '', reg = regadioOf(f);
+    let info = f.geometry.type;
+    if (f.properties.uso) info += ' · uso ' + f.properties.uso;
+    if (sup) info += ' · ' + sup;
+    if (pend) info += ' · pend. ' + String(pend).replace('.', ',') + '%';
+    if (reg) info += ' · ' + reg;
+    s.textContent = info;
+    l.append(s);
+    d.append(l, k, a);
+    d.onclick = () => { focusFeature(f); closeList(); };
+    if (selectedFeature && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
+      d.style.background = '#3ddc84'; d.style.color = '#06210f';
+    }
+    box.append(d); rows.push({ f, k, a, el: d });
   });
   if (!rows.length) { const d = document.createElement('div'); d.className = 'i'; d.textContent = 'Sin puntos. Pulsa KMZ para importar.'; box.append(d); }
   upd();
@@ -745,10 +902,10 @@ function upd() {
     r.a.innerHTML = `<span style="display:inline-block;transform:rotate(${(b - ref).toFixed(0)}deg)">↑</span> ${Math.round(b)}° ${card(b)}`;
   });
 }
-setInterval(() => { if ($('#list').style.display === 'block') upd(); }, 1000);
+setInterval(() => { if ($('#list').style.display === 'block') upd(); updSelArrow(); updSpeed(); }, 1000);
 function closeList() { if (openP === 'list') panel('list'); }
 $('#bL').onclick = () => panel('list');
 $('#q').oninput = render;
-$('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; save(); render(); } };
+$('#bX').onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; selectedFeature = null; map.getSource('sel').setData(EMPTY); save(); render(); } };
 </script>
 </body></html>
