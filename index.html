@@ -14,12 +14,15 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 .b.on,.go{background:var(--ac);color:#06210f}
 #bar{position:absolute;top:env(safe-area-inset-top,0);left:0;right:0;z-index:5;display:flex;gap:6px;padding:8px;overflow-x:auto}
 .pn{position:absolute;z-index:6;background:var(--gl);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:none}
+#lm,#om{z-index:7}
 #lm,#om{top:calc(62px + env(safe-area-inset-top,0));left:8px;border-radius:14px;padding:6px;flex-direction:column}
 #om{left:auto;right:8px;width:min(88vw,320px)}
 #lm .b,#om .b{background:none;text-align:left;box-shadow:none;white-space:normal}
 #om .row{padding:8px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #om select{font:inherit;padding:6px;border-radius:8px;border:0;background:#ffffff22;color:#fff}
 #om option{color:#000}
+/* NUEVO: botón de texto con color azul (sin lógica) */
+#om .mailText{color:#1a73e8;font-weight:600}
 #cmp{position:absolute;right:10px;top:calc(64px + env(safe-area-inset-top,0));z-index:5;width:52px;padding:5px 0 4px;border-radius:14px;background:var(--gl);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);text-align:center;font:600 11px system-ui;box-sizing:border-box}
 #cmp svg{width:36px;height:36px;display:block;margin:0 auto}
 #cmp b{display:block;font-size:10px;letter-spacing:.3px}
@@ -72,8 +75,19 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 #colorDlg label{display:flex;align-items:center;justify-content:space-between;padding:8px 0;gap:10px}
 #colorDlg input[type=color]{width:48px;height:36px;border:0;background:none;padding:0;border-radius:8px}
 #colorDlg .b{margin-top:12px;width:100%}
-/* NUEVO: popup de inclinación al ajustar pitch */
 #pitchPop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;background:rgba(0,0,0,.88);color:#fff;padding:14px 24px;border-radius:16px;font:700 22px system-ui,sans-serif;display:none;pointer-events:none;white-space:nowrap;border:1px solid #ffffff30;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+#errToast{position:absolute;left:50%;top:calc(122px + env(safe-area-inset-top,0));transform:translateX(-50%);z-index:9;background:#ffc107;color:#000;padding:10px 22px;border-radius:14px;font:700 22px system-ui,sans-serif;display:none;box-shadow:0 4px 14px rgba(0,0,0,.55);pointer-events:none;align-items:center;gap:8px}
+#errToast.on{display:flex;animation:errPop .18s ease}
+@keyframes errPop{from{opacity:0;transform:translateX(-50%) scale(.85)}to{opacity:1;transform:translateX(-50%) scale(1)}}
+#errHistDlg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:11;background:var(--gl);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:16px;padding:16px;display:none;width:min(92vw,440px);max-height:80vh;box-sizing:border-box}
+#errHistDlg.on{display:block}
+#errHistDlg h3{margin:0 0 12px;font-size:16px}
+#errHistList{max-height:55vh;overflow-y:auto;background:rgba(0,0,0,.35);border-radius:8px;padding:8px;margin-bottom:10px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
+#errHistList .errItem{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.1);color:#fff;word-break:break-word}
+#errHistList .errItem:last-child{border-bottom:0}
+#errHistList .errTime{color:#ffc107;font-weight:700;margin-right:8px;display:inline-block}
+#errHistList .errEmpty{opacity:.6;text-align:center;padding:20px;font-style:italic}
+#errHistDlg .b{margin-top:6px;width:100%}
 </style>
 <script src="maplibre-gl.js"></script>
 <script>window.maplibregl||document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js" crossorigin="anonymous"><\/script>')</script>
@@ -101,6 +115,13 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"></div><div id="items"></div></div>
 <div id="msg"></div>
 <div id="pitchPop"></div>
+<div id="errToast">⚠️</div>
+<div id="errHistDlg">
+  <h3>Historial de errores</h3>
+  <div id="errHistList"></div>
+  <button class="b" id="errHistClear">Borrar historial</button>
+  <button class="b" id="errHistClose" style="margin-top:6px">Cerrar</button>
+</div>
 <div id="colorDlg">
   <h3>Colores de importación</h3>
   <label>Puntos <input type="color" id="colPt" value="#e5392f"></label>
@@ -112,14 +133,30 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
-/* ---------- Instrumentación de errores ---------- */
+let errors = [];
+try { const s = localStorage.getItem('mapa3d-errors'); if (s) { const a = JSON.parse(s); if (Array.isArray(a)) errors = a; } } catch (e) { errors = []; }
+function saveErrors() { try { localStorage.setItem('mapa3d-errors', JSON.stringify(errors)); } catch (e) {} }
+function showErrToast() {
+  const el = document.getElementById('errToast');
+  if (!el) return;
+  el.classList.add('on');
+  clearTimeout(showErrToast.t);
+  showErrToast.t = setTimeout(() => el.classList.remove('on'), 1000);
+}
+function addError(text) {
+  try {
+    errors.push({ t: Date.now(), m: String(text) });
+    if (errors.length > 200) errors = errors.slice(-200);
+    saveErrors();
+    showErrToast();
+    console.error('[Mapa3D]', text);
+  } catch (e) {}
+}
 window.addEventListener('error', e => {
-  const m = document.getElementById('msg');
-  if (m) { m.textContent = 'ERROR: ' + (e.message || 'desconocido') + (e.lineno ? ' (línea ' + e.lineno + ')' : ''); m.style.display = 'block'; }
-  console.error('[Mapa3D]', e.error || e.message, e.filename || '', e.lineno || '');
+  addError('JS: ' + (e.message || 'desconocido') + (e.lineno ? ' (línea ' + e.lineno + ')' : ''));
 });
 window.addEventListener('unhandledrejection', e => {
-  console.error('[Mapa3D] Promise rechazada:', e.reason);
+  addError('Promise: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason || 'desconocido')));
 });
 
 const $ = s => document.querySelector(s), R = Math.PI / 180;
@@ -175,9 +212,6 @@ try { const v = JSON.parse(LS.get('visited') || '[]'); v.forEach(i => visited.ad
 let tOff = 0, d3busy = false;
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
 
-/* ============================================================
-   NUEVO (4): Punto de origen configurable
-   ============================================================ */
 let originPoint = null;
 try { originPoint = JSON.parse(LS.get('origin-point') || 'null'); } catch (e) { originPoint = null; }
 let originMarker = null;
@@ -328,7 +362,7 @@ const map = new maplibregl.Map({
 
 map.getCanvas().addEventListener('webglcontextlost', e => {
   e.preventDefault();
-  msg('WebGL perdido. Recarga la página para restaurar el mapa 3D.');
+  addError('WebGL perdido. Recarga la página para restaurar el mapa 3D.');
 });
 
 function addDem(spec) {
@@ -371,22 +405,20 @@ map.on('style.load', () => {
     map.addLayer({ id: 'route-case', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#fff', 'line-width': 11 } });
     map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2a7fff', 'line-width': 6.5 } });
     map.addLayer({ id: 'dest', type: 'circle', source: 'dest', paint: { 'circle-radius': 10, 'circle-color': '#3ddc84', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
-    try { map.addLayer(carLayer); } catch (e) { msg('Coche 3D no disponible: ' + e.message); }
+    try { map.addLayer(carLayer); } catch (e) { addError('Coche 3D no disponible: ' + e.message); }
     mkDot.setLngLat([0, 0]).addTo(map); mkCone.setLngLat([0, 0]).addTo(map); updIcons();
     try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#dfe9ee',
       'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.4 }); } catch (e) {}
     set3d(is3d, true); render();
     drawOriginMarker();
     if (data.features.length) fit(data.features);
-  } catch (e) { msg('style.load: ' + e.message); }
+  } catch (e) { addError('style.load: ' + e.message); }
 });
 
-/* NUEVO (3): detección de tipo de puntero para diferenciar ratón/touch */
 let lastPointerType = 'mouse';
 map.getCanvas().addEventListener('pointerdown', e => { lastPointerType = e.pointerType || 'mouse'; }, { passive: true });
 map.getCanvas().addEventListener('touchstart', () => { lastPointerType = 'touch'; }, { passive: true });
 
-/* NUEVO (3): long press en móvil → marcar punto y recalcular itinerario */
 (function setupLongPress() {
   const canvas = map.getCanvas();
   let timer = null, sx = 0, sy = 0;
@@ -414,20 +446,15 @@ map.getCanvas().addEventListener('touchstart', () => { lastPointerType = 'touch'
 })();
 
 map.on('click', e => {
-  /* Modo "elegir origen": cualquier clic fija el origen */
   if (pickingOrigin) { finishPickingOrigin(e.lngLat); return; }
-
   const q = map.queryRenderedFeatures(e.point, { layers: ['kml-pts', 'kml-line', 'kml-fill'] })[0];
-
   if (!q) {
     if (selectedFeature) { selectedFeature = null; updSelArrow(); updListSelection(); map.getSource('sel').setData(EMPTY); }
-    /* NUEVO (3): clic izquierdo con ratón sobre zona vacía → marcar + recalcular ruta */
     if (lastPointerType === 'mouse') {
       routeTo([e.lngLat.lng, e.lngLat.lat], false, null);
     }
     return;
   }
-
   const f = data.features.find(x => x.properties.id === q.properties.id && x.geometry.type === q.geometry.type);
   if (f) select(f);
   popup(q.properties, q.geometry.type === 'Point' ? q.geometry.coordinates : [e.lngLat.lng, e.lngLat.lat], f);
@@ -441,7 +468,6 @@ map.on('contextmenu', e => {
 map.on('dragstart', () => { if (follow && !sim) setFollow(false); });
 map.on('zoom', e => { if (e.originalEvent) zT = camZ = map.getZoom(); });
 
-/* NUEVO (2): popup con inclinación al ajustar pitch en modo navegación */
 let pitchTimer = null;
 function showPitchPopup(p) {
   const el = $('#pitchPop'); if (!el) return;
@@ -728,8 +754,7 @@ function setFollow(on) {
   follow = on;
   if (on) {
     camZ = map.getZoom(); zT = is3d ? 16.4 : 16.9; camB = map.getBearing(); camP = map.getPitch();
-    const sp = parseFloat(LS.get('nav-pitch'));
-    pT = (!isNaN(sp) ? sp : (route ? 80 : 62));
+    pT = 70;
   }
   setPad(); applyVis(); applyLock(); updIcons(); updSpeed(); sync();
 }
@@ -911,11 +936,17 @@ on('#nSim', () => {
   route.i = 0; route.ni = 1; sim = { d: 0, i: 0 }; tgt = null; to3d(); setFollow(true); loop();
 });
 function stepSim(dt) {
+  if (!sim || !route || !Array.isArray(route.c) || route.c.length < 2) { sim = null; return sync(); }
   sim.d += 17 * dt;
-  const { c, cum } = route;
-  while (sim.i < c.length - 2 && cum[sim.i + 1] < sim.d) sim.i++;
-  if (sim.d >= route.tot) { sim = null; return sync(); }
-  const f = (sim.d - cum[sim.i]) / Math.max(cum[sim.i + 1] - cum[sim.i], 0.01), a = c[sim.i], b = c[sim.i + 1];
+  const c = route.c, cum = route.cum;
+  let i = sim.i || 0;
+  while (i < c.length - 2 && cum[i + 1] < sim.d) i++;
+  sim.i = i;
+  if (sim.d >= route.tot || i >= c.length - 1) { sim = null; return sync(); }
+  const a = c[i], b = c[i + 1];
+  if (!a || !b || a.length < 2 || b.length < 2) { sim = null; return sync(); }
+  const den = Math.max(cum[i + 1] - cum[i], 0.01);
+  const f = (sim.d - cum[i]) / den;
   fix(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, brg(a, b), 17);
 }
 
@@ -943,7 +974,7 @@ function set3d(on, noCam) {
       terrainOffWhenFlat();
     }
     if (follow) setPad(); else if (!noCam && was !== on) map.easeTo({ pitch: on ? 62 : 0, duration: 650, easing: easeOut });
-  } catch (e) { msg('3D: ' + e.message); }
+  } catch (e) { addError('3D: ' + e.message); }
   setTimeout(() => { try { labels(); } catch (e) {} }, 400);
   updSpeed();
   setTimeout(() => { d3busy = false; }, 250);
@@ -992,7 +1023,7 @@ on('#bC', () => panel('lm'));
           map.fitBounds([[h.minLon, h.minLat], [h.maxLon, h.maxLat]], { animate: false });
           msg('Mapa offline cargado');
         }
-      } catch (err) { msg(f.name + ': ' + err.message); }
+      } catch (err) { addError(f.name + ': ' + err.message); }
     }
     e.target.value = ''; if (openP === 'lm') panel('lm');
   };
@@ -1007,6 +1038,34 @@ on('#bC', () => panel('lm'));
     showColorDlg(files);
   };
 })();
+
+function openErrHist() {
+  const d = $('#errHistDlg'), list = $('#errHistList');
+  if (!d || !list) return;
+  list.textContent = '';
+  if (!errors.length) {
+    const e = document.createElement('div'); e.className = 'errEmpty'; e.textContent = 'Sin errores registrados'; list.append(e);
+  } else {
+    errors.slice().reverse().forEach(err => {
+      const dt = new Date(err.t);
+      const ds = dt.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      const item = document.createElement('div'); item.className = 'errItem';
+      const time = document.createElement('span'); time.className = 'errTime'; time.textContent = ds;
+      item.append(time, document.createTextNode(String(err.m)));
+      list.append(item);
+    });
+  }
+  d.classList.add('on');
+}
+on('#errHistClose', () => { const d = $('#errHistDlg'); if (d) d.classList.remove('on'); });
+on('#errHistClear', () => {
+  if (confirm('¿Borrar el historial de errores?')) {
+    errors = [];
+    saveErrors();
+    const d = $('#errHistDlg'); if (d) d.classList.remove('on');
+    msg('Historial de errores borrado');
+  }
+});
 
 function optMenu() {
   const m = $('#om'); if (!m) return; m.textContent = '';
@@ -1028,7 +1087,6 @@ function optMenu() {
   m.append(ic);
   const iS = ic.querySelector('#oI');
   if (iS) iS.onchange = e => { opts.icon = e.target.value; LS.set('opts', JSON.stringify(opts)); updIcons(); };
-  /* NUEVO (4): botón punto de origen */
   const oP = btn(originPoint ? '🏠 Cambiar punto de origen' : '🏠 Fijar punto de origen');
   oP.onclick = () => { optMenuClose(); startPickingOrigin(); };
   m.append(oP);
@@ -1040,6 +1098,13 @@ function optMenu() {
   const d = btn(job ? 'Cancelar descarga' : 'Descargar mapa cerca de los puntos'); d.onclick = dlZone; m.append(d);
   const x = btn('Borrar mapas descargados'); x.onclick = async () => { if (window.caches && confirm('¿Borrar todos los mapas descargados?')) { await caches.delete(CACHE); msg('Caché de mapas borrada'); } }; m.append(x);
   const c = btn('Colores de importación KMZ'); c.onclick = () => { optMenuClose(); showColorDlg(null); }; m.append(c);
+  const eh = btn('Historial de errores' + (errors.length ? ' (' + errors.length + ')' : ''));
+  eh.onclick = () => { optMenuClose(); openErrHist(); };
+  m.append(eh);
+  /* Botón de texto azul, SIN lógica */
+  const wa = btn('Enviar mensaje a sergiotas@hotmail.com');
+  wa.classList.add('mailText');
+  m.append(wa);
   const z = btn('Borrar todos los puntos'); z.onclick = () => { if (confirm('¿Borrar todos los puntos importados?')) { data.features = []; visited.clear(); saveVisited(); selectedFeature = null; map.getSource('sel').setData(EMPTY); updSelArrow(); save(); render(); optMenu(); } }; m.append(z);
   const v = btn('Borrar marcas de visitados'); v.onclick = () => { visited.clear(); saveVisited(); if (map.getLayer('kml-visit')) map.setFilter('kml-visit', ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'id'], ['literal', []]]]); render(); msg('Marcas de visitados borradas'); optMenu(); }; m.append(v);
 }
@@ -1117,7 +1182,7 @@ on('#bK', () => { const f = $('#fK'); if (f) f.click(); });
 async function importKmzFiles(files) {
   let n = 0, bad = 0;
   for (const f of files) {
-    try { const fs = await readFile(f); data.features.push(...fs); n += fs.length; fit(fs); } catch (err) { bad = 1; msg(f.name + ': ' + err.message); }
+    try { const fs = await readFile(f); data.features.push(...fs); n += fs.length; fit(fs); } catch (err) { bad = 1; addError(f.name + ': ' + err.message); }
   }
   save(); render();
   if (n) msg(n + ' elementos importados'); else if (!bad) msg('No se encontraron puntos, líneas ni polígonos en el archivo');
@@ -1158,8 +1223,6 @@ function render() {
     fs = fs.filter(f => safeName(f).includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
     if (me) fs.sort((a, b) => a.d - b.d);
     listSorted = !!me;
-
-    /* NUEVO (4): prepende el origen (si existe y coincide con la búsqueda) */
     if (originPoint && (!q || originPoint.name.toLowerCase().includes(q))) {
       const originFeature = {
         type: 'Feature',
@@ -1168,7 +1231,6 @@ function render() {
       };
       fs.unshift({ f: originFeature, d: me ? dist(me, [originPoint.lng, originPoint.lat]) : 0 });
     }
-
     fs.slice(0, 300).forEach(({ f }) => {
       const d = document.createElement('div'), l = document.createElement('div'), s = document.createElement('small'), k = document.createElement('div'), a = document.createElement('div');
       d.className = 'i'; l.className = 'l'; k.className = 'k'; a.className = 'a';
@@ -1200,7 +1262,7 @@ function render() {
     });
     if (!rows.length) { const d = document.createElement('div'); d.className = 'i'; d.textContent = 'Sin puntos. Pulsa KMZ para importar.'; box.append(d); }
     upd();
-  } catch (e) { msg('render: ' + e.message); }
+  } catch (e) { addError('render: ' + e.message); }
 }
 function upd() {
   try {
@@ -1210,7 +1272,7 @@ function upd() {
       r.k.textContent = (dist(me, c) / 1000).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + ' km';
       r.a.innerHTML = `<span style="display:inline-block;transform:rotate(${(b - ref).toFixed(0)}deg)">↑</span> ${Math.round(b)}° ${card(b)}`;
     });
-  } catch (e) { msg('upd: ' + e.message); }
+  } catch (e) { addError('upd: ' + e.message); }
 }
 setInterval(() => { const l = $('#list'); if (l && l.style.display === 'block') upd(); updSelArrow(); updSpeed(); }, 1000);
 function closeList() { if (openP === 'list') panel('list'); }
@@ -1220,7 +1282,7 @@ on('#bL', () => panel('list'));
 if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('portrait').catch(() => {}); }
 
 if (missing.length) {
-  setTimeout(() => msg('Faltan en el HTML: ' + [...new Set(missing)].join(', ')), 500);
+  setTimeout(() => addError('Faltan en el HTML: ' + [...new Set(missing)].join(', ')), 500);
 }
 </script>
 </body></html>
