@@ -5,7 +5,7 @@
 <link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%22Mapa%203D%22%2C%22short_name%22%3A%22Mapa3D%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22orientation%22%3A%22portrait%22%2C%22background_color%22%3A%22%23101614%22%2C%22theme_color%22%3A%22%23101614%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2522http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2522%2520viewBox%253D%25220%25200%252040%252040%2522%253E%253Crect%2520width%253D%252240%2522%2520height%253D%252240%2522%2520fill%253D%2522%2523101614%2522%252F%253E%253Cpath%2520d%253D%2522M20%25205L30%252022H10Z%2522%2520fill%253D%2522%25233ddc84%2522%252F%253E%253C%252Fsvg%253E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
 <title>Mapa 3D</title>
 <link rel="stylesheet" href="maplibre-gl.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css" crossorigin="anonymous">
 <style>
 :root{--gl:rgba(16,22,20,.82);--ac:#3ddc84}
 html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidden;color:#fff;background:#000}
@@ -72,15 +72,17 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 #colorDlg label{display:flex;align-items:center;justify-content:space-between;padding:8px 0;gap:10px}
 #colorDlg input[type=color]{width:48px;height:36px;border:0;background:none;padding:0;border-radius:8px}
 #colorDlg .b{margin-top:12px;width:100%}
+/* NUEVO: popup de inclinación al ajustar pitch */
+#pitchPop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;background:rgba(0,0,0,.88);color:#fff;padding:14px 24px;border-radius:16px;font:700 22px system-ui,sans-serif;display:none;pointer-events:none;white-space:nowrap;border:1px solid #ffffff30;box-shadow:0 4px 16px rgba(0,0,0,.5)}
 </style>
 <script src="maplibre-gl.js"></script>
-<script>window.maplibregl||document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"><\/script>')</script>
+<script>window.maplibregl||document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js" crossorigin="anonymous"><\/script>')</script>
 <script src="three.min.js"></script>
-<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"><\/script>')</script>
+<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js" crossorigin="anonymous"><\/script>')</script>
 <script src="jszip.min.js"></script>
-<script>window.JSZip||document.write('<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"><\/script>')</script>
+<script>window.JSZip||document.write('<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" crossorigin="anonymous"><\/script>')</script>
 <script src="pmtiles.js"></script>
-<script>window.pmtiles||document.write('<script src="https://cdn.jsdelivr.net/npm/pmtiles@3.2.1/dist/pmtiles.js"><\/script>')</script>
+<script>window.pmtiles||document.write('<script src="https://cdn.jsdelivr.net/npm/pmtiles@3.2.1/dist/pmtiles.js" crossorigin="anonymous"><\/script>')</script>
 </head><body>
 <div id="map"></div>
 <div id="bar">
@@ -98,6 +100,7 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
   <div id="nb"><button class="b go" id="nGo">Iniciar</button><button class="b" id="nSim">Simular</button><button class="b" id="nX">Cerrar</button></div></div>
 <div class="pn" id="list"><div id="hd"><input id="q" type="search" placeholder="Buscar punto"></div><div id="items"></div></div>
 <div id="msg"></div>
+<div id="pitchPop"></div>
 <div id="colorDlg">
   <h3>Colores de importación</h3>
   <label>Puntos <input type="color" id="colPt" value="#e5392f"></label>
@@ -109,14 +112,17 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
+/* ---------- Instrumentación de errores ---------- */
 window.addEventListener('error', e => {
   const m = document.getElementById('msg');
   if (m) { m.textContent = 'ERROR: ' + (e.message || 'desconocido') + (e.lineno ? ' (línea ' + e.lineno + ')' : ''); m.style.display = 'block'; }
-  console.error('[Mapa3D]', e.error || e.message);
+  console.error('[Mapa3D]', e.error || e.message, e.filename || '', e.lineno || '');
+});
+window.addEventListener('unhandledrejection', e => {
+  console.error('[Mapa3D] Promise rechazada:', e.reason);
 });
 
 const $ = s => document.querySelector(s), R = Math.PI / 180;
-
 const missing = [];
 function on(sel, fn) {
   const el = document.querySelector(sel);
@@ -168,6 +174,50 @@ let visited = new Set();
 try { const v = JSON.parse(LS.get('visited') || '[]'); v.forEach(i => visited.add(i)); } catch (e) {}
 let tOff = 0, d3busy = false;
 const car = { lng: 0, lat: 0, hdg: 0, z: 0, on: false, show: false };
+
+/* ============================================================
+   NUEVO (4): Punto de origen configurable
+   ============================================================ */
+let originPoint = null;
+try { originPoint = JSON.parse(LS.get('origin-point') || 'null'); } catch (e) { originPoint = null; }
+let originMarker = null;
+let pickingOrigin = false;
+function saveOrigin() { LS.set('origin-point', JSON.stringify(originPoint)); }
+function drawOriginMarker() {
+  if (originMarker) { try { originMarker.remove(); } catch (e) {} originMarker = null; }
+  if (!originPoint || !map) return;
+  const el = document.createElement('div');
+  el.style.cssText = 'pointer-events:auto;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7))';
+  el.innerHTML = '<svg viewBox="0 0 24 24" width="32" height="32"><path d="M12 3L2 12h3v9h5v-6h4v6h5v-9h3z" fill="#e5392f" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  el.title = originPoint.name;
+  el.onclick = (ev) => {
+    ev.stopPropagation();
+    routeTo([originPoint.lng, originPoint.lat], false, null);
+  };
+  originMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([originPoint.lng, originPoint.lat]).addTo(map);
+}
+function startPickingOrigin() {
+  pickingOrigin = true;
+  msg('Pulsa en el mapa para fijar el punto de origen');
+}
+function finishPickingOrigin(lngLat) {
+  pickingOrigin = false;
+  const cur = originPoint ? originPoint.name : 'Origen';
+  const name = prompt('Nombre del punto de origen:', cur);
+  if (name === null) { msg('Acción cancelada'); return; }
+  originPoint = { lng: lngLat.lng, lat: lngLat.lat, name: (name.trim() || 'Origen') };
+  saveOrigin();
+  drawOriginMarker();
+  render();
+  msg('Punto de origen: ' + originPoint.name);
+}
+function clearOrigin() {
+  originPoint = null;
+  saveOrigin();
+  drawOriginMarker();
+  render();
+  msg('Punto de origen borrado');
+}
 
 const dist = (a, b) => Math.hypot((b[0] - a[0]) * R * Math.cos((a[1] + b[1]) / 2 * R), (b[1] - a[1]) * R) * 6371008;
 const brg = (a, b) => (Math.atan2((b[0] - a[0]) * Math.cos(a[1] * R), b[1] - a[1]) / R + 360) % 360;
@@ -276,6 +326,11 @@ const map = new maplibregl.Map({
     layers: BASES.map(b => ({ id: 'b-' + b.id, type: 'raster', source: b.id, layout: { visibility: b.id === sel ? 'visible' : 'none' } })) }
 });
 
+map.getCanvas().addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  msg('WebGL perdido. Recarga la página para restaurar el mapa 3D.');
+});
+
 function addDem(spec) {
   if (map.getLayer('hill')) map.removeLayer('hill');
   map.setTerrain(null);
@@ -321,24 +376,87 @@ map.on('style.load', () => {
     try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#dfe9ee',
       'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.4 }); } catch (e) {}
     set3d(is3d, true); render();
+    drawOriginMarker();
     if (data.features.length) fit(data.features);
   } catch (e) { msg('style.load: ' + e.message); }
 });
 
+/* NUEVO (3): detección de tipo de puntero para diferenciar ratón/touch */
+let lastPointerType = 'mouse';
+map.getCanvas().addEventListener('pointerdown', e => { lastPointerType = e.pointerType || 'mouse'; }, { passive: true });
+map.getCanvas().addEventListener('touchstart', () => { lastPointerType = 'touch'; }, { passive: true });
+
+/* NUEVO (3): long press en móvil → marcar punto y recalcular itinerario */
+(function setupLongPress() {
+  const canvas = map.getCanvas();
+  let timer = null, sx = 0, sy = 0;
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    sx = t.clientX; sy = t.clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      const rect = canvas.getBoundingClientRect();
+      const pt = map.unproject([sx - rect.left, sy - rect.top]);
+      if (pickingOrigin) { finishPickingOrigin(pt); return; }
+      routeTo([pt.lng, pt.lat], false, null);
+      buzz(30);
+    }, 650);
+  }, { passive: true });
+  const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  canvas.addEventListener('touchend', clear, { passive: true });
+  canvas.addEventListener('touchmove', e => {
+    if (!timer) return;
+    const t = e.touches[0]; if (!t) return clear();
+    if (Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8) clear();
+  }, { passive: true });
+  canvas.addEventListener('touchcancel', clear, { passive: true });
+})();
+
 map.on('click', e => {
+  /* Modo "elegir origen": cualquier clic fija el origen */
+  if (pickingOrigin) { finishPickingOrigin(e.lngLat); return; }
+
   const q = map.queryRenderedFeatures(e.point, { layers: ['kml-pts', 'kml-line', 'kml-fill'] })[0];
+
   if (!q) {
     if (selectedFeature) { selectedFeature = null; updSelArrow(); updListSelection(); map.getSource('sel').setData(EMPTY); }
+    /* NUEVO (3): clic izquierdo con ratón sobre zona vacía → marcar + recalcular ruta */
+    if (lastPointerType === 'mouse') {
+      routeTo([e.lngLat.lng, e.lngLat.lat], false, null);
+    }
     return;
   }
+
   const f = data.features.find(x => x.properties.id === q.properties.id && x.geometry.type === q.geometry.type);
   if (f) select(f);
   popup(q.properties, q.geometry.type === 'Point' ? q.geometry.coordinates : [e.lngLat.lng, e.lngLat.lat], f);
 });
-map.on('contextmenu', e => popup({ name: 'Punto elegido en el mapa' }, [e.lngLat.lng, e.lngLat.lat]));
+
+map.on('contextmenu', e => {
+  e.preventDefault();
+  if (pickingOrigin) { finishPickingOrigin(e.lngLat); return; }
+  popup({ name: 'Punto elegido en el mapa' }, [e.lngLat.lng, e.lngLat.lat]);
+});
 map.on('dragstart', () => { if (follow && !sim) setFollow(false); });
 map.on('zoom', e => { if (e.originalEvent) zT = camZ = map.getZoom(); });
-map.on('pitch', e => { if (e.originalEvent && follow) pT = camP = map.getPitch(); });
+
+/* NUEVO (2): popup con inclinación al ajustar pitch en modo navegación */
+let pitchTimer = null;
+function showPitchPopup(p) {
+  const el = $('#pitchPop'); if (!el) return;
+  el.textContent = 'Inclinación: ' + Math.round(p) + '°';
+  el.style.display = 'block';
+  clearTimeout(pitchTimer);
+  pitchTimer = setTimeout(() => { el.style.display = 'none'; }, 1000);
+}
+map.on('pitch', e => {
+  if (e.originalEvent && follow) {
+    pT = camP = map.getPitch();
+    showPitchPopup(pT);
+    if (is3d) LS.set('nav-pitch', String(Math.round(pT)));
+  }
+});
 map.on('rotate', () => { const b = map.getBearing(); $('#cmp svg').style.transform = `rotate(${-b}deg)`; $('#cd').textContent = Math.round((b + 360) % 360) + '°'; updSelArrow(); });
 map.on('moveend', () => { if (!lt) lt = setTimeout(() => { lt = 0; labels(); }, follow ? 1500 : 200); });
 function applyRot() { const rot = cmode === 'M'; map.dragRotate[rot ? 'enable' : 'disable'](); map.touchZoomRotate[rot ? 'enableRotation' : 'disableRotation'](); }
@@ -407,14 +525,9 @@ const recinto = f => {
   if (f.geometry.type === 'Polygon') return f;
   return data.features.find(g => g && g.geometry && g.geometry.type === 'Polygon' && pip(ptOf(f), g.geometry.coordinates[0])) || null;
 };
-
-/* ============================================================
-   CAMBIO: un punto hereda el estado "visitado" de su polígono
-   contenedor. Así, al marcar un recinto como visitado, todos
-   los puntos dentro de él también se muestran verdes en la lista.
-   ============================================================ */
 function isVisited(f) {
   if (!f || !f.properties) return false;
+  if (f.properties.isOrigin) return false;
   if (visited.has(f.properties.id)) return true;
   if (f.geometry && f.geometry.type === 'Point') {
     const r = recinto(f);
@@ -422,7 +535,6 @@ function isVisited(f) {
   }
   return false;
 }
-
 const usoOf = f => { const p = (f && f.properties) || {}, m = /uso[_ ]?sigpac[\s|:=]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+)/i.exec(p.desc || ''); return (p.uso || (m && m[1]) || '').trim(); };
 function usoSay(f) {
   const p = recinto(f), g = k => String((f.properties && f.properties[k]) || (p && p.properties && p.properties[k]) || '').trim();
@@ -614,7 +726,11 @@ function applyVis() {
 function setFollow(on) {
   if (on === follow) return sync();
   follow = on;
-  if (on) { camZ = map.getZoom(); zT = is3d ? 16.4 : 16.9; camB = map.getBearing(); camP = map.getPitch(); pT = route ? 80 : 62; }
+  if (on) {
+    camZ = map.getZoom(); zT = is3d ? 16.4 : 16.9; camB = map.getBearing(); camP = map.getPitch();
+    const sp = parseFloat(LS.get('nav-pitch'));
+    pT = (!isNaN(sp) ? sp : (route ? 80 : 62));
+  }
   setPad(); applyVis(); applyLock(); updIcons(); updSpeed(); sync();
 }
 function sync() {
@@ -724,8 +840,8 @@ function turnTxt(s) {
   return M[m] ? 'Gire ' + M[m] + n : 'Continúe recto' + n;
 }
 async function routeTo(d, re, f) {
-  const o = me || map.getCenter().toArray();
-  if (!me && !re) msg('Sin posición GPS: la ruta sale del centro del mapa');
+  const o = me || (originPoint ? [originPoint.lng, originPoint.lat] : map.getCenter().toArray());
+  if (!me && !re) msg(originPoint ? 'Ruta desde: ' + originPoint.name : 'Sin posición GPS: la ruta sale del centro del mapa');
   if (window.speechSynthesis && !re) speechSynthesis.speak(new SpeechSynthesisUtterance(''));
   let c, dur, tot, steps = [], line = false;
   try {
@@ -845,6 +961,7 @@ function menu() {
   const o = btn('+ Cargar mapa offline (.pmtiles)'); o.onclick = () => { const f = $('#fP'); if (f) f.click(); }; m.append(o);
 }
 function panel(id) {
+  if (openP !== id) pickingOrigin = false;
   openP = openP === id ? null : id;
   [['lm', 'flex', 'bC'], ['om', 'flex', 'bO'], ['list', 'block', 'bL']].forEach(([k, d, b]) => {
     const el = $('#' + k); if (el) el.style.display = k === openP ? d : 'none';
@@ -911,6 +1028,15 @@ function optMenu() {
   m.append(ic);
   const iS = ic.querySelector('#oI');
   if (iS) iS.onchange = e => { opts.icon = e.target.value; LS.set('opts', JSON.stringify(opts)); updIcons(); };
+  /* NUEVO (4): botón punto de origen */
+  const oP = btn(originPoint ? '🏠 Cambiar punto de origen' : '🏠 Fijar punto de origen');
+  oP.onclick = () => { optMenuClose(); startPickingOrigin(); };
+  m.append(oP);
+  if (originPoint) {
+    const oD = btn('✕ Borrar punto de origen');
+    oD.onclick = () => { clearOrigin(); optMenu(); };
+    m.append(oD);
+  }
   const d = btn(job ? 'Cancelar descarga' : 'Descargar mapa cerca de los puntos'); d.onclick = dlZone; m.append(d);
   const x = btn('Borrar mapas descargados'); x.onclick = async () => { if (window.caches && confirm('¿Borrar todos los mapas descargados?')) { await caches.delete(CACHE); msg('Caché de mapas borrada'); } }; m.append(x);
   const c = btn('Colores de importación KMZ'); c.onclick = () => { optMenuClose(); showColorDlg(null); }; m.append(c);
@@ -1032,13 +1158,24 @@ function render() {
     fs = fs.filter(f => safeName(f).includes(q)).map(f => ({ f, d: me ? dist(me, ptOf(f)) : 0 }));
     if (me) fs.sort((a, b) => a.d - b.d);
     listSorted = !!me;
+
+    /* NUEVO (4): prepende el origen (si existe y coincide con la búsqueda) */
+    if (originPoint && (!q || originPoint.name.toLowerCase().includes(q))) {
+      const originFeature = {
+        type: 'Feature',
+        properties: { id: -1, name: '🏠 ' + originPoint.name, isOrigin: true },
+        geometry: { type: 'Point', coordinates: [originPoint.lng, originPoint.lat] }
+      };
+      fs.unshift({ f: originFeature, d: me ? dist(me, [originPoint.lng, originPoint.lat]) : 0 });
+    }
+
     fs.slice(0, 300).forEach(({ f }) => {
       const d = document.createElement('div'), l = document.createElement('div'), s = document.createElement('small'), k = document.createElement('div'), a = document.createElement('div');
       d.className = 'i'; l.className = 'l'; k.className = 'k'; a.className = 'a';
       d._feature = f;
       l.textContent = (f.properties && f.properties.name) || '(sin nombre)';
       const sup = superficieOf(f), pend = (f.properties && f.properties.pend) || '', reg = regadioOf(f);
-      let info = f.geometry.type;
+      let info = f.properties && f.properties.isOrigin ? 'Punto de origen' : f.geometry.type;
       if (f.properties && f.properties.uso) info += ' · uso ' + f.properties.uso;
       if (sup) info += ' · ' + sup;
       if (pend) info += ' · pend. ' + String(pend).replace('.', ',') + '%';
@@ -1046,8 +1183,14 @@ function render() {
       s.textContent = info;
       l.append(s);
       d.append(l, k, a);
-      d.onclick = () => { focusFeature(f); closeList(); };
-      // Visitado (por herencia del polígono contenedor) > seleccionado > normal
+      d.onclick = () => {
+        if (f.properties && f.properties.isOrigin && originPoint) {
+          map.easeTo({ center: [originPoint.lng, originPoint.lat], zoom: Math.max(map.getZoom(), 17), duration: 600 });
+          closeList();
+        } else {
+          focusFeature(f); closeList();
+        }
+      };
       if (isVisited(f)) {
         d.style.background = '#2fb36b'; d.style.color = '#06210f';
       } else if (selectedFeature && selectedFeature.properties && f.properties && f.properties.id === selectedFeature.properties.id && f.geometry.type === selectedFeature.geometry.type) {
