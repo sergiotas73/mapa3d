@@ -21,7 +21,6 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 #om .row{padding:8px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #om select{font:inherit;padding:6px;border-radius:8px;border:0;background:#ffffff22;color:#fff}
 #om option{color:#000}
-/* NUEVO: botón de texto con color azul (sin lógica) */
 #om .mailText{color:#1a73e8;font-weight:600}
 #cmp{position:absolute;right:10px;top:calc(64px + env(safe-area-inset-top,0));z-index:5;width:52px;padding:5px 0 4px;border-radius:14px;background:var(--gl);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);text-align:center;font:600 11px system-ui;box-sizing:border-box}
 #cmp svg{width:36px;height:36px;display:block;margin:0 auto}
@@ -407,8 +406,9 @@ map.on('style.load', () => {
     map.addLayer({ id: 'dest', type: 'circle', source: 'dest', paint: { 'circle-radius': 10, 'circle-color': '#3ddc84', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
     try { map.addLayer(carLayer); } catch (e) { addError('Coche 3D no disponible: ' + e.message); }
     mkDot.setLngLat([0, 0]).addTo(map); mkCone.setLngLat([0, 0]).addTo(map); updIcons();
-    try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#dfe9ee',
-      'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.7, 'fog-ground-blend': 0.4 }); } catch (e) {}
+    /* CAMBIO 1: niebla menos densa en la base (fog-ground-blend 0.4 → 0.1) */
+    try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#e8eef2',
+      'sky-horizon-blend': 0.4, 'horizon-fog-blend': 0.4, 'fog-ground-blend': 0.1 }); } catch (e) {}
     set3d(is3d, true); render();
     drawOriginMarker();
     if (data.features.length) fit(data.features);
@@ -864,6 +864,8 @@ function turnTxt(s) {
   if (s.type === 'merge') return 'Incorpórese' + n;
   return M[m] ? 'Gire ' + M[m] + n : 'Continúe recto' + n;
 }
+
+/* CAMBIO 3: servidor OSM más actualizado + alternatives, elegimos la más rápida */
 async function routeTo(d, re, f) {
   const o = me || (originPoint ? [originPoint.lng, originPoint.lat] : map.getCenter().toArray());
   if (!me && !re) msg(originPoint ? 'Ruta desde: ' + originPoint.name : 'Sin posición GPS: la ruta sale del centro del mapa');
@@ -871,8 +873,10 @@ async function routeTo(d, re, f) {
   let c, dur, tot, steps = [], line = false;
   try {
     const ctl = new AbortController(); setTimeout(() => ctl.abort(), 7000);
-    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${o[0]},${o[1]};${d[0]},${d[1]}?overview=full&geometries=geojson&steps=true`, { signal: ctl.signal });
-    const rt = (await r.json()).routes[0]; c = rt.geometry.coordinates; dur = rt.duration; tot = rt.distance;
+    const r = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${o[0]},${o[1]};${d[0]},${d[1]}?overview=full&geometries=geojson&steps=true&alternatives=true`, { signal: ctl.signal });
+    const rd = await r.json();
+    const routes = (rd.routes || []).slice().sort((a, b) => (a.duration || 0) - (b.duration || 0));
+    const rt = routes[0]; c = rt.geometry.coordinates; dur = rt.duration; tot = rt.distance;
     steps = rt.legs.flatMap(l => l.steps).map(s => ({ loc: s.maneuver.location, type: s.maneuver.type, mod: s.maneuver.modifier, exit: s.maneuver.exit, name: s.name }));
   } catch (e) { c = [o, d]; tot = dist(o, d); dur = tot / (50 / 3.6); line = true; msg('Sin conexión: línea recta a 50 km/h'); }
   const cum = [0]; for (let i = 1; i < c.length; i++) cum.push(cum[i - 1] + dist(c[i - 1], c[i]));
@@ -917,7 +921,8 @@ function progress() {
   const rem = route.tot - route.cum[best] + bd;
   showNav(rem, route.dur * rem / route.tot); turns();
   if (rem < 25) { speak('Ha llegado a su destino.'); buzz([80, 60, 80]); closeNav(); return; }
-  if (bd > 150 && !sim && Date.now() - route.t > 20000) { route.t = Date.now(); speak('Recalculando ruta'); routeTo(route.d, true, route.f); }
+  /* CAMBIO 2: recalcMsg vacío — sin voz de "Recalculando ruta" */
+  if (bd > 150 && !sim && Date.now() - route.t > 20000) { route.t = Date.now(); const recalcMsg = ''; if (recalcMsg) speak(recalcMsg); routeTo(route.d, true, route.f); }
 }
 function closeNav() {
   route = null; sim = null;
@@ -1101,7 +1106,6 @@ function optMenu() {
   const eh = btn('Historial de errores' + (errors.length ? ' (' + errors.length + ')' : ''));
   eh.onclick = () => { optMenuClose(); openErrHist(); };
   m.append(eh);
-  /* Botón de texto azul, SIN lógica */
   const wa = btn('Enviar mensaje a sergiotas@hotmail.com');
   wa.classList.add('mailText');
   m.append(wa);
