@@ -132,6 +132,16 @@ html,body{margin:0;height:100%;font:15px/1.3 system-ui,sans-serif;overflow:hidde
 <input type="file" id="fK" accept=".kmz,.kml" multiple hidden>
 <input type="file" id="fP" accept=".pmtiles" multiple hidden>
 <script>
+/* ============================================================
+   NUEVO: registro del Service Worker para funcionamiento offline.
+   Requiere un archivo sw.js en la misma carpeta que este HTML.
+   ============================================================ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
 let errors = [];
 try { const s = localStorage.getItem('mapa3d-errors'); if (s) { const a = JSON.parse(s); if (Array.isArray(a)) errors = a; } } catch (e) { errors = []; }
 function saveErrors() { try { localStorage.setItem('mapa3d-errors', JSON.stringify(errors)); } catch (e) {} }
@@ -406,7 +416,6 @@ map.on('style.load', () => {
     map.addLayer({ id: 'dest', type: 'circle', source: 'dest', paint: { 'circle-radius': 10, 'circle-color': '#3ddc84', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
     try { map.addLayer(carLayer); } catch (e) { addError('Coche 3D no disponible: ' + e.message); }
     mkDot.setLngLat([0, 0]).addTo(map); mkCone.setLngLat([0, 0]).addTo(map); updIcons();
-    /* CAMBIO 1: niebla menos densa en la base (fog-ground-blend 0.4 → 0.1) */
     try { map.setSky({ 'sky-color': '#5c9fe0', 'horizon-color': '#eaf2f7', 'fog-color': '#e8eef2',
       'sky-horizon-blend': 0.4, 'horizon-fog-blend': 0.4, 'fog-ground-blend': 0.1 }); } catch (e) {}
     set3d(is3d, true); render();
@@ -864,8 +873,6 @@ function turnTxt(s) {
   if (s.type === 'merge') return 'Incorpórese' + n;
   return M[m] ? 'Gire ' + M[m] + n : 'Continúe recto' + n;
 }
-
-/* CAMBIO 3: servidor OSM más actualizado + alternatives, elegimos la más rápida */
 async function routeTo(d, re, f) {
   const o = me || (originPoint ? [originPoint.lng, originPoint.lat] : map.getCenter().toArray());
   if (!me && !re) msg(originPoint ? 'Ruta desde: ' + originPoint.name : 'Sin posición GPS: la ruta sale del centro del mapa');
@@ -921,7 +928,6 @@ function progress() {
   const rem = route.tot - route.cum[best] + bd;
   showNav(rem, route.dur * rem / route.tot); turns();
   if (rem < 25) { speak('Ha llegado a su destino.'); buzz([80, 60, 80]); closeNav(); return; }
-  /* CAMBIO 2: recalcMsg vacío — sin voz de "Recalculando ruta" */
   if (bd > 150 && !sim && Date.now() - route.t > 20000) { route.t = Date.now(); const recalcMsg = ''; if (recalcMsg) speak(recalcMsg); routeTo(route.d, true, route.f); }
 }
 function closeNav() {
