@@ -259,7 +259,6 @@ html, body {
 #nb .b:hover { background: rgba(255, 255, 255, 0.12); }
 #nb .go { background: var(--accent); border-color: var(--accent); }
 
-/* SCROLL BLINDADO DE LA LISTA DE PUNTOS */
 #list {
   position: absolute;
   left: 0; right: 0; bottom: 0;
@@ -293,7 +292,7 @@ html, body {
 }
 #items {
   flex: 1;
-  min-height: 0; /* CLAVE: permite que el scroll funcione en flexbox */
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
@@ -1012,6 +1011,32 @@ function usoSay(f) {
   }
   return s;
 }
+
+// NUEVA FUNCIÓN: Copiar referencia SIGPAC al portapapeles
+function copyRefSigpac(f) {
+  if (!f || !f.properties) return;
+  const name = (f.properties.name || '').trim();
+  // Validar formato SIGPAC: números separados por guiones (ej: 46-215-0-0-1-2-1)
+  if (!/^\d+(-\d+)+$/.test(name)) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(name)
+      .then(() => msg('Ref. SIGPAC copiada: ' + name))
+      .catch(() => fallbackCopy(name));
+  } else {
+    fallbackCopy(name);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;left:-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); msg('Ref. SIGPAC copiada: ' + text); }
+  catch (e) { msg('No se pudo copiar la referencia'); }
+  document.body.removeChild(ta);
+}
+
 function select(f, quiet) {
   if (selectedFeature && selectedFeature.properties.id === f.properties.id && selectedFeature.geometry.type === f.geometry.type) {
     selectedFeature = null;
@@ -1020,6 +1045,7 @@ function select(f, quiet) {
     return null;
   }
   selF = f; selectedFeature = f;
+  copyRefSigpac(f); // COPIAR REFERENCIA SIGPAC AL SELECCIONAR
   const poly = recinto(f);
   map.getSource('sel').setData({ type: 'FeatureCollection', features: poly && poly !== f ? [poly, f] : [f] });
   if (!quiet) { const s = usoSay(f); if (s) speak(s); }
@@ -1028,6 +1054,7 @@ function select(f, quiet) {
 }
 function selectForce(f, quiet) {
   selF = f; selectedFeature = f;
+  copyRefSigpac(f); // COPIAR REFERENCIA SIGPAC AL SELECCIONAR
   const poly = recinto(f);
   map.getSource('sel').setData({ type: 'FeatureCollection', features: poly && poly !== f ? [poly, f] : [f] });
   if (!quiet) { const s = usoSay(f); if (s) speak(s); }
@@ -1796,7 +1823,6 @@ function upd() {
     });
   } catch (e) { addError('upd: ' + e.message); }
 }
-// CORREGIDO: ahora comprueba 'flex' en lugar de 'block' (la lista usa display: flex al abrirse)
 setInterval(() => { const l = $('#list'); if (l && l.style.display === 'flex') upd(); updSelArrow(); updSpeed(); }, 1000);
 function closeList() { if (openP === 'list') panel('list'); }
 on('#bL', () => panel('list'));
