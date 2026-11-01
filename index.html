@@ -267,7 +267,7 @@ html, body {
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding-bottom: env(safe-area-inset-bottom, 0);
   border: 1px solid var(--glass-border); border-bottom: none;
-  flex-direction: column; /* Se activa solo cuando JS aplica display: flex */
+  flex-direction: column;
   z-index: 10;
   background: var(--glass-bg-heavy);
   backdrop-filter: blur(16px);
@@ -293,6 +293,7 @@ html, body {
 }
 #items {
   flex: 1;
+  min-height: 0; /* CLAVE: permite que el scroll funcione en flexbox */
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
@@ -1115,7 +1116,7 @@ function checkBalizaAlert() {
     const id = f.properties.nombre;
     if (announcedBalizas.has(id)) continue;
     const d = dist(me, f.geometry.coordinates);
-    if (d < 3000) { // CORREGIDO: Aviso a 3 km (3000 metros)
+    if (d < 3000) {
       announcedBalizas.add(id);
       speak(`Atención, baliza ${id} cercana en tu itinerario`);
       buzz([50, 50, 50]);
@@ -1506,7 +1507,6 @@ function menu() {
 function panel(id) {
   if (openP !== id) pickingOrigin = false;
   openP = openP === id ? null : id;
-  // CORREGIDO: 'list' ahora usa 'flex' en lugar de 'block' para que el scroll funcione correctamente
   [['lm', 'flex', 'bC'], ['om', 'flex', 'bO'], ['list', 'flex', 'bL']].forEach(([k, d, b]) => {
     const el = $('#' + k); if (el) el.style.display = k === openP ? d : 'none';
     const bEl = $('#' + b); if (bEl) bEl.classList.toggle('on', k === openP);
@@ -1796,7 +1796,8 @@ function upd() {
     });
   } catch (e) { addError('upd: ' + e.message); }
 }
-setInterval(() => { const l = $('#list'); if (l && l.style.display === 'block') upd(); updSelArrow(); updSpeed(); }, 1000);
+// CORREGIDO: ahora comprueba 'flex' en lugar de 'block' (la lista usa display: flex al abrirse)
+setInterval(() => { const l = $('#list'); if (l && l.style.display === 'flex') upd(); updSelArrow(); updSpeed(); }, 1000);
 function closeList() { if (openP === 'list') panel('list'); }
 on('#bL', () => panel('list'));
 { const qEl = $('#q'); if (qEl) qEl.oninput = render; }
